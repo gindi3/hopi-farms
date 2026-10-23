@@ -757,3 +757,5 @@ b.down { color: #b8402e; }
 .chest-table th .muted { display: block; font-size: 15px; font-weight: normal; }
 
 .odds tr.pending td { color: var(--ink-soft); }
+
+.odds tr.total td { border-top: 2px solid var(--outline); border-bottom: 0; }

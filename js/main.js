@@ -695,19 +695,18 @@ function renderHistory() {
   const levelSpend = st.levelSpend || 0;
   const harvested = st.harvestCoins ?? st.coinsEarned ?? 0;
   const deposited = st.cropDeposited || 0;
-  const packNet = G.round2(harvested - packSpend);
-  const farmNet = G.round2(harvested - packSpend - levelSpend);
-  // Pending: what seeds still to be harvested will pay at the current level.
+  // Pending: what seeds still to be harvested (planted or in the backpack) will pay now.
   const plantedCrops = state.plots.filter(Boolean);
-  const plantedValue = G.round2(plantedCrops.reduce((a, p) => a + G.cropPayout(p.cropId, state.level), 0));
   const heldCount = Object.values(state.seeds).reduce((a, b) => a + b, 0);
-  const heldValue = G.round2(Object.entries(state.seeds).reduce((a, [id, n]) => a + G.cropPayout(id, state.level) * n, 0));
-  const pending = G.round2(plantedValue + heldValue);
-  const packNetPending = G.round2(packNet + pending);
-  const signed = (n) => `<b class="${n > 0 ? 'up' : n < 0 ? 'down' : ''}">${n > 0 ? '+' : ''}${fmt(n)}</b>`;
+  const pending = G.round2(plantedCrops.reduce((a, p) => a + G.cropPayout(p.cropId, state.level), 0) +
+    Object.entries(state.seeds).reduce((a, [id, n]) => a + G.cropPayout(id, state.level) * n, 0));
+  const net = G.round2(harvested + pending - packSpend);
+  const signed = (n) => `<b class="${n > 0 ? 'up' : n < 0 ? 'down' : ''}">${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(Math.abs(n))}</b>`;
   const pulls = st.pulls || {};
   const pulledTotal = Object.values(pulls).reduce((a, b) => a + b, 0);
-  const rtp = packSpend ? harvested / packSpend : null;
+  // Per-pack spend started being tracked later than the total; show any gap as its own row.
+  const tierSpend = TIERS.map(t => [t, st.spentByTier?.[t] || 0]);
+  const untracked = G.round2(packSpend - tierSpend.reduce((a, [, v]) => a + v, 0));
   view.innerHTML = `
     <h2 class="section-title">My History</h2>
     <div class="cards">
@@ -716,28 +715,20 @@ function renderHistory() {
         <table class="odds">
           <tr><td>Spent on seed packs</td><td class="num">−${fmt(packSpend)}</td></tr>
           <tr><td>Redeemed from harvests</td><td class="num">+${fmt(harvested)}</td></tr>
-          <tr><td><b>Net from packs</b></td><td class="num">${signed(packNet)}</td></tr>
-          <tr class="pending"><td>Pending: ${plural(plantedCrops.length, 'crop')} planted</td><td class="num">+${fmt(plantedValue)}</td></tr>
-          <tr class="pending"><td>Pending: ${plural(heldCount, 'seed')} in your backpack</td><td class="num">+${fmt(heldValue)}</td></tr>
-          <tr><td><b>Net from packs, with pending</b></td><td class="num">${signed(packNetPending)}</td></tr>
-          <tr><td>Spent on valley levels</td><td class="num">−${fmt(levelSpend)}</td></tr>
-          <tr><td><b>Net from farming</b></td><td class="num">${signed(farmNet)}</td></tr>
-          <tr><td>Deposited from your wallet</td><td class="num">+${fmt(deposited)}</td></tr>
-          <tr><td>Balance now</td><td class="num">${fmt(state.coins)}</td></tr>
+          <tr><td>Still to harvest <span class="muted">(${plural(plantedCrops.length, 'planted crop')}, ${plural(heldCount, 'seed')} held)</span></td><td class="num">+${fmt(pending)}</td></tr>
+          <tr class="total"><td><b>Net</b></td><td class="num">${signed(net)}</td></tr>
         </table>
-        <div class="muted">${rtp === null ? 'Open a pack to start your history.' : `Harvests have paid back ${pct(rtp)} of what you spent on packs, or ${pct((harvested + pending) / packSpend)} counting seeds you haven't harvested yet. Pending seeds are valued at what they pay at your current level.`}</div>
+        <div class="muted">${packSpend ? `Packs have returned ${pct((harvested + pending) / packSpend)} of what you spent, counting seeds not yet harvested at today's values.` : 'Open a pack to start your history.'}
+          Also spent ${fmt(levelSpend)} on valley levels${deposited ? ` and deposited ${fmt(deposited)} from your wallet` : ''}.</div>
       </div>
       <div class="card">
-        <h4>Activity</h4>
+        <h4>Spent by pack</h4>
         <table class="odds">
-          <tr><td>Packs opened</td><td class="num">${fmt(st.packsOpened, 0)}</td></tr>
-          <tr><td>Harvests</td><td class="num">${fmt(st.harvests, 0)}</td></tr>
-          <tr><td>Potions brewed</td><td class="num">${fmt(st.brews || 0, 0)}</td></tr>
-          <tr><td>Valley level</td><td class="num">${state.level}</td></tr>
-          <tr><td>XP</td><td class="num">${fmt(state.xp, 0)}</td></tr>
+          ${tierSpend.map(([t, v]) => `<tr><td>${spriteImg(`pack_${t}`, 20)}</td><td>${TIER[t].label}</td><td class="num">${fmt(v)} $CROP</td></tr>`).join('')}
+          ${untracked > 0.004 ? `<tr><td></td><td>Earlier, before tracking</td><td class="num">${fmt(untracked)} $CROP</td></tr>` : ''}
+          <tr class="total"><td></td><td><b>Total</b></td><td class="num"><b>${fmt(packSpend)} $CROP</b></td></tr>
         </table>
-        <h4 style="margin-top:8px">Spent by pack</h4>
-        <table class="odds">${TIERS.map(t => `<tr><td>${spriteImg(`pack_${t}`, 20)}</td><td>${TIER[t].label}</td><td class="num">${fmt(st.spentByTier?.[t] || 0)} $CROP</td></tr>`).join('')}</table>
+        <div class="muted">${fmt(st.packsOpened, 0)} packs opened · ${fmt(st.harvests, 0)} harvests · ${fmt(st.brews || 0, 0)} potions brewed</div>
       </div>
       <div class="card wide">
         <h4>Seeds pulled from packs</h4>
