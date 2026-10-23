@@ -5,6 +5,7 @@
 // cancelled requests are refunded. One request per player per UTC day.
 
 import * as G from '../js/game.js';
+import { STARTER } from '../js/data.js';
 import { base58Decode, parseTransfer } from './solana.js';
 import { dayOf } from './admin.js';
 
@@ -85,6 +86,52 @@ export function createWithdrawals({ store, ok, bad, loadFarm, config, rpc }) {
       totals: Object.fromEntries(store.withdrawalTotals().map(t => [t.status, t])),
       requests: store.allWithdrawals(200),
     }),
+
+    // Everything about one player that matters before paying them: money in vs. money out,
+    // free $CROP received, gameplay, and every deposit and withdrawal request.
+    'GET /api/admin/withdrawals/player': (req, { url }) => {
+      const id = Number(url.searchParams.get('id'));
+      const user = Number.isInteger(id) ? store.userById(id) : null;
+      const row = user && store.farmRow(id);
+      if (!row) return bad('No such player.', 404);
+      const s = JSON.parse(row.state);
+      const st = s.stats || {};
+      const farms = (s.farms || []).length || 1;
+      const dep = store.depositSumOf(id);
+      const wd = store.withdrawalSumsOf(id);
+      const adjustments = store.adjustmentsOf(id);
+      const adminCrop = G.round2(adjustments.reduce((a, d) => a + (d.coins || 0), 0));
+      const sum = (k) => G.round2(wd[k]?.amount || 0);
+      const out = G.round2(sum('sent') + sum('pending'));
+      // Starter $CROP: the amount in effect now, once per farm (an estimate if it was changed).
+      const starter = G.round2(STARTER.coins * farms);
+      const packSpend = st.packSpend || 0;
+      const harvested = st.harvestCoins ?? st.coinsEarned ?? 0;
+      return ok({
+        player: {
+          id, username: user.username, name: s.name, wallet: store.walletOf(id),
+          createdAt: row.created_at, lastActive: row.updated_at, farms,
+          level: Math.max(s.level, ...(s.farms || []).map(f => f.level || 0)), xp: s.xp,
+        },
+        money: {
+          balance: G.round2(s.coins),
+          deposited: G.round2(dep.amount), deposits: dep.n,
+          withdrawn: sum('sent'), pendingOut: sum('pending'), declined: sum('declined'),
+          // Positive = they'd end up with more $CROP than they deposited (from starter grants,
+          // admin adjustments, and winnings).
+          aheadOfDeposits: G.round2(s.coins + out - dep.amount),
+          starter, adminCrop,
+        },
+        play: {
+          packsOpened: st.packsOpened || 0, packSpend: G.round2(packSpend), harvested: G.round2(harvested),
+          packNet: G.round2(harvested - packSpend), levelSpend: G.round2(st.levelSpend || 0),
+          farmSpend: G.round2(st.farmSpend || 0), harvests: st.harvests || 0, brews: st.brews || 0,
+        },
+        adjustments,
+        deposits: store.allDepositsOf(id),
+        withdrawals: store.allWithdrawalsOf(id),
+      });
+    },
 
     // Mark sent after paying from the treasury; the signature must show that payment.
     'POST /api/admin/withdrawals/sent': async (req, { userId, body }) => {

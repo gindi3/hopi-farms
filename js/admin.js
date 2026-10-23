@@ -615,11 +615,12 @@ async function renderWithdrawals() {
       <div class="card tile"><div class="label">Sent</div><div class="value">${fmt(t('sent').amount)}</div><div class="sub">$CROP in ${fmt(t('sent').n, 0)} withdrawals</div></div>
       <div class="card tile"><div class="label">Declined</div><div class="value">${fmt(t('declined').n, 0)}</div><div class="sub">${fmt(t('declined').amount)} $CROP refunded</div></div>
     </div>
+    <div class="split">
     <div class="card" style="padding:0"><div class="table-wrap"><table>
       <thead><tr><th>Requested</th><th>Player</th><th class="num">$CROP</th><th>Send to</th><th>Status</th><th>Action</th></tr></thead>
       <tbody>${d.requests.map(r => `<tr>
         <td>${new Date(r.requested_at).toLocaleString()}</td>
-        <td>${esc(r.username)}</td>
+        <td><button class="link-btn" data-wd-player="${r.user_id}" title="See this player's money and stats">${esc(r.username)}</button></td>
         <td class="num"><b>${fmt(r.amount)}</b></td>
         <td class="mono"><span title="${esc(r.wallet)}">${esc(short(r.wallet))}</span> <button class="btn" data-copy="${esc(r.wallet)}" style="padding:2px 8px">Copy</button></td>
         <td>${pill[r.status] || esc(r.status)}${r.note && r.status !== 'pending' ? ` <span class="muted">${esc(r.note)}</span>` : ''}</td>
@@ -630,7 +631,10 @@ async function renderWithdrawals() {
             <button class="btn danger" type="button" data-wd-decline="${r.id}" data-amount="${r.amount}" data-user="${esc(r.username)}">Decline</button>
           </form>` : r.signature ? `<a class="mono" href="https://solscan.io/tx/${encodeURIComponent(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a>${r.admin ? ` <span class="muted">by ${esc(r.admin)}</span>` : ''}` : (r.admin ? `<span class="muted">by ${esc(r.admin)}</span>` : '')}</td>
       </tr>`).join('') || '<tr><td colspan="6" class="muted">No requests yet.</td></tr>'}</tbody>
-    </table></div></div>`;
+    </table></div></div>
+    <div class="card" id="wd-player"><p class="muted">Click a player's name to see their deposits, withdrawals and play before you pay.</p></div>
+    </div>`;
+  if (wdPlayer) run(() => renderWdPlayer(wdPlayer));
   view.querySelectorAll('form[data-wd-sent]').forEach(f => f.addEventListener('submit', async (e) => {
     e.preventDefault();
     const signature = new FormData(f).get('signature').trim();
@@ -645,6 +649,57 @@ async function renderWithdrawals() {
       if (err instanceof ApiError) toast(err.message, true); else throw err;
     }
   }));
+}
+
+// The player panel beside the withdrawal requests.
+let wdPlayer = null;
+async function renderWdPlayer(id) {
+  wdPlayer = id;
+  const box = $('#wd-player');
+  if (!box) return;
+  box.innerHTML = '<p class="muted">Loading…</p>';
+  const d = await api('GET', `/admin/withdrawals/player?id=${id}`);
+  const { player: p, money: m, play } = d;
+  const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-6)}` : '—');
+  const signed = (n) => `<b class="${n > 0 ? 'warn' : n < 0 ? 'good' : ''}">${n > 0 ? '+' : ''}${fmt(n)}</b>`;
+  const wdPill = { pending: 'warn', sent: 'good' };
+  box.innerHTML = `
+    <h2>${esc(p.name)}</h2>
+    <div class="muted">@${esc(p.username || 'guest')} · id ${p.id} · joined ${new Date(p.createdAt).toLocaleDateString()} (${ago(p.createdAt)}) · active ${ago(p.lastActive)}</div>
+    <div class="muted mono" style="margin-top:4px">Wallet ${p.wallet ? `<a href="https://solscan.io/account/${encodeURIComponent(p.wallet)}" target="_blank" rel="noopener noreferrer" title="${esc(p.wallet)}">${esc(short(p.wallet))}</a>` : 'not linked'}</div>
+
+    <h3 style="margin-top:14px">Money in vs. out</h3>
+    <dl class="kv">
+      <dt>Deposited</dt><dd>${fmt(m.deposited)} $CROP <span class="muted">(${fmt(m.deposits, 0)} transfers)</span></dd>
+      <dt>Withdrawn (sent)</dt><dd>${fmt(m.withdrawn)}</dd>
+      <dt>Waiting to send</dt><dd>${fmt(m.pendingOut)}</dd>
+      <dt>Balance in game</dt><dd>${fmt(m.balance)}</dd>
+      <dt>Ahead of deposits</dt><dd>${signed(m.aheadOfDeposits)}</dd>
+    </dl>
+    <p class="note" style="margin-top:8px">${m.aheadOfDeposits > 0
+      ? `Paying everything out would give this player ${fmt(m.aheadOfDeposits)} $CROP more than they deposited. Of that, ${fmt(m.starter)} is starter $CROP (${p.farms} farm${p.farms === 1 ? '' : 's'})${m.adminCrop ? ` and ${fmt(m.adminCrop)} came from dashboard adjustments` : ''}; the rest is net winnings.`
+      : `This player has put in at least as much $CROP as they hold, have pending and have withdrawn.`}</p>
+
+    <h3 style="margin-top:14px">Play</h3>
+    <dl class="kv">
+      <dt>Packs</dt><dd>${fmt(play.packsOpened, 0)} opened · ${fmt(play.packSpend)} spent</dd>
+      <dt>Harvests</dt><dd>${fmt(play.harvests, 0)} · ${fmt(play.harvested)} redeemed</dd>
+      <dt>Net from packs</dt><dd>${signed(play.packNet)}</dd>
+      <dt>Levels / farms</dt><dd>top level ${p.level} on ${p.farms} farm${p.farms === 1 ? '' : 's'} · ${fmt(play.levelSpend)} on levels · ${fmt(play.farmSpend)} on farms</dd>
+      <dt>XP / potions</dt><dd>${fmt(p.xp, 0)} XP · ${fmt(play.brews, 0)} brews</dd>
+    </dl>
+
+    ${d.adjustments.length ? `<h3 style="margin-top:14px">Dashboard adjustments</h3>
+      <table><tbody>${d.adjustments.map(a => `<tr><td>${new Date(a.at).toLocaleDateString()}</td><td class="num">${a.coins ? `${a.coins > 0 ? '+' : ''}${fmt(a.coins)} $CROP` : ''} ${a.gems ? `${a.gems > 0 ? '+' : ''}${a.gems} gems` : ''}</td><td class="muted">${esc(a.reason || '')} · ${esc(a.admin)}</td></tr>`).join('')}</tbody></table>` : ''}
+
+    <h3 style="margin-top:14px">Withdrawal requests</h3>
+    ${d.withdrawals.length ? `<table><tbody>${d.withdrawals.map(w => `<tr><td>${new Date(w.requested_at).toLocaleDateString()}</td><td class="num">${fmt(w.amount)}</td>
+      <td><span class="pill ${wdPill[w.status] || ''}">${esc(w.status)}</span></td><td>${w.signature ? `<a class="mono" href="https://solscan.io/tx/${encodeURIComponent(w.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(w.signature))}</a>` : esc(w.note || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>'}
+
+    <h3 style="margin-top:14px">Deposits</h3>
+    ${d.deposits.length ? `<table><tbody>${d.deposits.map(x => `<tr><td>${new Date(x.time).toLocaleDateString()}</td><td class="num">${fmt(x.amount)} $CROP</td>
+      <td><a class="mono" href="https://solscan.io/tx/${encodeURIComponent(x.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(x.signature))}</a></td></tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>'}`;
+  document.querySelectorAll('[data-wd-player]').forEach(b => b.closest('tr').classList.toggle('sel', Number(b.dataset.wdPlayer) === id));
 }
 
 function setWithdrawCount(n) {
@@ -715,6 +770,8 @@ document.addEventListener('click', (e) => {
     document.querySelectorAll('[data-player]').forEach(r => r.classList.toggle('sel', r === row));
     return run(() => renderPlayerDetail(selectedPlayer));
   }
+  const wp = e.target.closest('[data-wd-player]');
+  if (wp) return run(() => renderWdPlayer(Number(wp.dataset.wdPlayer)));
   const copy = e.target.closest('[data-copy]');
   if (copy) {
     navigator.clipboard?.writeText(copy.dataset.copy).then(() => toast('Wallet address copied.'), () => toast('Copy failed.', true));

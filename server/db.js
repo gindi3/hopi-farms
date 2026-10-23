@@ -157,6 +157,11 @@ export function openDb(file) {
     allWithdrawals: db.prepare(`SELECT w.*, u.username FROM withdrawals w JOIN users u ON u.id = w.user_id
       ORDER BY (w.status = 'pending') DESC, w.id DESC LIMIT ?`),
     withdrawalTotals: db.prepare('SELECT status, COUNT(*) AS n, SUM(amount) AS amount FROM withdrawals GROUP BY status'),
+    depositSumOf: db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(amount), 0) AS amount FROM deposits WHERE user_id = ? AND status = 'credited'`),
+    allDepositsOf: db.prepare(`SELECT signature, time, amount, status FROM deposits WHERE user_id = ? ORDER BY time DESC LIMIT 100`),
+    withdrawalSumsOf: db.prepare('SELECT status, COUNT(*) AS n, SUM(amount) AS amount FROM withdrawals WHERE user_id = ? GROUP BY status'),
+    allWithdrawalsOf: db.prepare('SELECT * FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 100'),
+    adjustLog: db.prepare(`SELECT at, admin, details FROM admin_log WHERE action = 'adjust player' ORDER BY id DESC`),
     addLog: db.prepare('INSERT INTO admin_log (at, admin, action, details) VALUES (?, ?, ?, ?)'),
     recentLog: db.prepare('SELECT at, admin, action, details FROM admin_log ORDER BY id DESC LIMIT ?'),
   };
@@ -232,6 +237,13 @@ export function openDb(file) {
     decideWithdrawal: (id, status, now, admin, signature, note) => q.decideWithdrawal.run(status, now, admin, signature, note, id).changes,
     allWithdrawals: (limit) => q.allWithdrawals.all(limit),
     withdrawalTotals: () => q.withdrawalTotals.all(),
+    depositSumOf: (userId) => q.depositSumOf.get(userId),
+    allDepositsOf: (userId) => q.allDepositsOf.all(userId),
+    withdrawalSumsOf: (userId) => Object.fromEntries(q.withdrawalSumsOf.all(userId).map(r => [r.status, r])),
+    allWithdrawalsOf: (userId) => q.allWithdrawalsOf.all(userId),
+    // Dashboard adjustments made to one player (coins/gems given or taken).
+    adjustmentsOf: (userId) => q.adjustLog.all().map(r => ({ at: r.at, admin: r.admin, ...JSON.parse(r.details) }))
+      .filter(d => d.player === userId),
     addLog: (admin, action, details, now) => q.addLog.run(now, admin, action, JSON.stringify(details)),
     recentLog: (limit) => q.recentLog.all(limit).map(r => ({ ...r, details: JSON.parse(r.details) })),
     close: () => db.close(),

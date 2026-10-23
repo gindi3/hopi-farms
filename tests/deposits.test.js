@@ -267,3 +267,32 @@ test('declining a request refunds the player', async () => {
   // Players can't use admin routes.
   assert.equal((await call('POST', '/api/admin/withdrawals/decline', { token, body: { id } })).status, 403);
 });
+
+test('the dev can see a player\'s money in vs. out before paying', async () => {
+  const adminTok = await player('auditor');
+  server.store.setAdmin('auditor', true);
+  const token = await player('audited');
+  const w = wallet();
+  await link(token, w);
+  transfer(w.address, 200);
+  await server.deposits.scan();
+  const me = (await call('GET', '/api/me', { token })).data;
+  const id = server.store.userByName('audited').id;
+  await call('POST', '/api/admin/player/adjust', { token: adminTok, body: { id, coins: 50, reason: 'gift' } });
+  await call('POST', '/api/withdrawals', { token, body: { amount: 120 } });
+
+  const r = await call('GET', `/api/admin/withdrawals/player?id=${id}`, { token: adminTok });
+  assert.equal(r.status, 200, r.data.error);
+  const m = r.data.money;
+  assert.equal(m.deposited, 200);
+  assert.equal(m.pendingOut, 120);
+  assert.equal(m.adminCrop, 50);
+  assert.equal(m.balance, G_round(me.state.coins + 50 - 120));
+  assert.equal(m.aheadOfDeposits, G_round(m.balance + 120 - 200));
+  assert.equal(r.data.player.wallet, w.address);
+  assert.equal(r.data.withdrawals[0].status, 'pending');
+  assert.equal(r.data.deposits.length, 1);
+  assert.equal((await call('GET', `/api/admin/withdrawals/player?id=${id}`, { token })).status, 403);
+});
+
+const G_round = (n) => Math.round(n * 100) / 100;
