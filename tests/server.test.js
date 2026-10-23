@@ -152,3 +152,23 @@ test('bad JSON and oversized bodies are rejected', async () => {
   assert.equal((await call('POST', '/api/action', { token: g.token, raw: '{nope' })).status, 400);
   assert.equal((await call('POST', '/api/action', { token: g.token, raw: JSON.stringify({ type: 'rename', name: 'x'.repeat(20000) }) })).status, 400);
 });
+
+test('the page loads its code from versioned URLs that match the API build', async () => {
+  const page = await call('GET', '/');
+  const m = /src="\/v\/([0-9a-f]+)\/js\/main\.js"/.exec(page.data);
+  assert.ok(m, 'index.html points at /v/<build>/js/main.js');
+  assert.match(page.data, new RegExp(`href="/v/${m[1]}/css/style.css"`));
+  const res = await fetch(`${base}/v/${m[1]}/js/game.js`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('cache-control'), /immutable/);
+  const g = await guest();
+  assert.equal(g.build, m[1]);
+  assert.equal((await call('GET', `/v/${m[1]}/server/index.js`)).status, 404);
+});
+
+test('a single pull still reports cropId at the top for older pages', async () => {
+  const g = await guest();
+  const r = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'feeble' } });
+  assert.equal(r.data.result.cropId, r.data.result.results[0].cropId);
+  assert.ok(r.data.result.rarity);
+});

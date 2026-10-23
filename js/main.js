@@ -87,8 +87,21 @@ async function api(method, path, body) {
   return data;
 }
 
+// The server loads this file from /v/<build>/js/main.js. If it later reports a different
+// build, a deploy happened while this tab was open: reload once to pick up the new code.
+const CLIENT_BUILD = (/\/v\/([0-9a-f]+)\//.exec(import.meta.url) || [])[1] || null;
+function checkBuild(build) {
+  if (!CLIENT_BUILD || !build || build === CLIENT_BUILD) return;
+  try {
+    if (sessionStorage.getItem('hopi-reloaded-for') === build) return;   // never loop
+    sessionStorage.setItem('hopi-reloaded-for', build);
+  } catch { /* storage unavailable: reload anyway */ }
+  location.reload();
+}
+
 // Take the farm (and clock) from a server response.
 function adopt(data) {
+  checkBuild(data.build);
   if (data.state) state = data.state;
   if (data.user) user = data.user;
   if (typeof data.now === 'number') clockOffset = data.now - Date.now();

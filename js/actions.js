@@ -26,7 +26,7 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
     case 'openPack': {
       const tier = tierOf(action), count = countOf(action);
       if ((state.packs[tier] || 0) < count) throw new G.GameError(`You only have ${state.packs[tier] || 0} of those packs.`);
-      return { results: Array.from({ length: count }, () => G.openPack(state, tier, rng)) };
+      return withFirst(Array.from({ length: count }, () => G.openPack(state, tier, rng)));
     }
 
     // Buy and open 1–9 packs at once. Checks the full price first, so a batch is all or nothing.
@@ -39,7 +39,7 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
         G.buyPack(state, tier);
         results.push(G.openPack(state, tier, rng));
       }
-      return { results };
+      return withFirst(results);
     }
 
     case 'plant':
@@ -127,6 +127,11 @@ export function seedsBestFirst(state) {
   return Object.keys(state.seeds).sort((a, b) =>
     TIER_ORDER.indexOf(CROP[b].tier) - TIER_ORDER.indexOf(CROP[a].tier) ||
     RARITY_ORDER.indexOf(CROP[b].rarity) - RARITY_ORDER.indexOf(CROP[a].rarity));
+}
+
+// Older pages expect a single pull's cropId/rarity at the top level, so keep those too.
+function withFirst(results) {
+  return { ...results[0], results };
 }
 
 function countOf(action) {

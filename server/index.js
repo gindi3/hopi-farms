@@ -10,6 +10,7 @@
 
 import { createServer as createHttpServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createHash, randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +42,19 @@ const CSP = [
 const MAX_BODY = 8 * 1024;
 const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
 
+// A fingerprint of the game's files. The page loads its code from /v/<build>/…, so every
+// deploy gets fresh URLs and no browser or CDN cache can serve stale code.
+export function computeBuild(root = ROOT) {
+  const hash = createHash('sha256');
+  const files = ['index.html'];
+  for (const dir of STATIC_DIRS) {
+    for (const name of readdirSync(join(root, dir)).sort()) files.push(`${dir}/${name}`);
+  }
+  for (const f of files) hash.update(f).update(readFileSync(join(root, f)));
+  return hash.digest('hex').slice(0, 12);
+}
+const VERSIONED = /^\/v\/([0-9a-f]{6,40})(\/.*)$/;
+
 export function createServer({
   dbFile = ':memory:',
   devSpeed = 1,
@@ -49,6 +63,7 @@ export function createServer({
   log = console,
 } = {}) {
   const store = openDb(dbFile);
+  const build = computeBuild();
   const limits = new RateLimiter();
   const rng = () => randomInt(0, 2 ** 47) / 2 ** 47;
 
@@ -181,12 +196,28 @@ export function createServer({
         if (!userId && !PUBLIC.has(key)) return send(res, bad('Please sign in again.', 401));
         const body = req.method === 'POST' ? await readJson(req) : null;
         if (body === INVALID) return send(res, bad('Bad request body.'));
-        return send(res, handler(req, { userId, body }));
+        const out = handler(req, { userId, body });
+        if (out.status === 200 && out.json) out.json.build = build;
+        return send(res, out);
       }
 
       if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, bad('Not found.', 404));
       if (url.pathname === '/config.js') {
         return send(res, { status: 200, type: TYPES['.js'], body: "window.HOPI_API = '/api';\n" });
+      }
+      const v = VERSIONED.exec(url.pathname);
+      if (v) {
+        const file = await staticFile(v[2]);
+        // The current build's files never change, so they can be cached for good.
+        if (file.status === 200 && v[1] === build) file.cache = 'public, max-age=31536000, immutable';
+        return send(res, file);
+      }
+      if (url.pathname === '/' || url.pathname === '/index.html') {
+        const page = await staticFile('/index.html');
+        page.body = String(page.body)
+          .replace('href="css/style.css"', `href="/v/${build}/css/style.css"`)
+          .replace('src="js/main.js"', `src="/v/${build}/js/main.js"`);
+        return send(res, page);
       }
       return send(res, await staticFile(url.pathname));
     } catch (e) {
@@ -205,7 +236,7 @@ const ok = (data) => ({ status: 200, json: data });
 const bad = (error, status = 400) => ({ status, json: { error } });
 const tooMany = () => bad('Slow down a little and try again.', 429);
 
-function send(res, { status, json, type, body }) {
+function send(res, { status, json, type, body, cache = 'no-cache' }) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('Content-Security-Policy', CSP);
@@ -213,7 +244,7 @@ function send(res, { status, json, type, body }) {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(json));
   } else {
-    res.writeHead(status, type ? { 'Content-Type': type, 'Cache-Control': 'no-cache' } : {});
+    res.writeHead(status, type ? { 'Content-Type': type, 'Cache-Control': cache } : {});
     res.end(body);
   }
 }
