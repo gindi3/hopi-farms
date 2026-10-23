@@ -387,10 +387,11 @@ function renderMarket() {
 
 // --- Gacha reel --------------------------------------------------------------
 
-const CELL = 76;           // reel cell width incl. gap, px
-const REEL_LEN = 46;
-const WIN_INDEX = 40;
-const SPIN_MS = 4200;
+// The gacha is a single slot window; the reel scrolls top to bottom through it.
+const CELL = 112;          // reel cell height incl. gap, px (matches .slot-window height)
+const REEL_LEN = 34;
+const WIN_INDEX = 30;
+const SPIN_MS = 3600;
 let spin = null;           // { tier, res, timer }
 
 function fakeRoll(tier) {
@@ -406,31 +407,40 @@ function revealPack(tier, buyFirst) {
   });
   if (!res) return;
   const winner = CROP[res.cropId];
+  // The reel is built bottom-up: cell 0 shows first and the strip slides down until the
+  // winner is in the window, so crops fall from the top like a slot machine.
   const cells = Array.from({ length: REEL_LEN }, (_, k) => (k === WIN_INDEX ? winner : fakeRoll(tier)));
-  // Tease: put a Legendary or Epic right next to the winner when it isn't one.
+  // Near miss: the crop that rolls past just before the winner is an Epic or Legendary.
   if (RARITIES.indexOf(res.rarity) < 3) {
-    const tease = CROPS.find(c => c.tier === tier && c.rarity === (Math.random() < 0.3 ? 'legendary' : 'epic'));
-    cells[WIN_INDEX + (Math.random() < 0.5 ? 1 : -1)] = tease;
+    const teaseRarity = Math.random() < 0.3 ? 'legendary' : 'epic';
+    cells[WIN_INDEX - 1] = CROPS.find(c => c.tier === tier && c.rarity === teaseRarity);
   }
   openModal(`
     <div class="gacha">
-      <h3>${TIER[tier].label} Seed Pack</h3>
-      <div class="reel-window" id="reel-window">
-        <div class="reel" id="reel">${cells.map((c, k) => `
-          <div class="cell ${c.rarity}" data-k="${k}">${spriteImg(`crop:${c.id}`, 48)}</div>`).join('')}
+      <div class="gacha-title">SEED GACHA</div>
+      <div class="gacha-box">
+        <div class="muted gacha-tier">${TIER[tier].label} pack</div>
+        <div class="slot-window">
+          <div class="reel spinning" id="reel">${[...cells].reverse().map((c, k) => `
+            <div class="cell ${c.rarity}" data-k="${REEL_LEN - 1 - k}">${spriteImg(`crop:${c.id}`, 64)}</div>`).join('')}
+          </div>
         </div>
-        <div class="reel-marker"></div>
+        <div class="slot-label" id="slot-label">Rolling</div>
       </div>
-      <div id="gacha-result" class="gacha-result"><button class="btn cream small" data-action="skip-spin">Skip</button></div>
-    </div>`, 'wide');
+      <div id="gacha-result" class="gacha-result"></div>
+      <div class="actions" id="gacha-actions">
+        <button class="btn cream" data-action="close">Back</button>
+        <button class="btn orange" data-action="skip-spin">Skip</button>
+      </div>
+    </div>`, 'gacha-panel');
   spin = { tier, res };
-  const win = $('#reel-window');
   const reel = $('#reel');
-  const jitter = (Math.random() - 0.5) * (CELL * 0.6);
-  const target = WIN_INDEX * CELL + CELL / 2 - win.clientWidth / 2 + jitter;
+  // Start with cell 0 (the bottom of the strip) in the window, then slide down to the winner.
+  const startY = -(REEL_LEN - 1) * CELL;
+  reel.style.transform = `translateY(${startY}px)`;
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    reel.style.transition = `transform ${SPIN_MS}ms cubic-bezier(.08,.72,.16,1)`;
-    reel.style.transform = `translateX(${-target}px)`;
+    reel.style.transition = `transform ${SPIN_MS}ms cubic-bezier(.1,.7,.15,1)`;
+    reel.style.transform = `translateY(${startY + WIN_INDEX * CELL}px)`;
   }));
   spin.timer = setTimeout(finishSpin, SPIN_MS + 80);
 }
@@ -442,29 +452,30 @@ function finishSpin() {
   spin = null;
   const reel = $('#reel');
   if (!reel) return;
-  const win = $('#reel-window');
   reel.style.transition = 'none';
-  reel.style.transform = `translateX(${-(WIN_INDEX * CELL + CELL / 2 - win.clientWidth / 2)}px)`;
+  reel.style.transform = `translateY(${-(REEL_LEN - 1 - WIN_INDEX) * CELL}px)`;
+  reel.classList.remove('spinning');
   reel.querySelector(`[data-k="${WIN_INDEX}"]`).classList.add('win');
   const crop = CROP[res.cropId];
   const gems = gemsFor(crop);
+  const label = $('#slot-label');
+  label.textContent = RARITY[res.rarity].label;
+  label.className = `slot-label ${res.rarity}`;
   const again = state.packs[tier]
-    ? `<button class="btn cream" data-action="open" data-tier="${tier}">Spin next (${state.packs[tier]})</button>`
-    : `<button class="btn cream" data-action="buy-open" data-tier="${tier}" ${state.coins < TIER[tier].cost ? 'disabled' : ''}>Spin again · ${fmt(TIER[tier].cost)}</button>`;
+    ? `<button class="btn orange" data-action="open" data-tier="${tier}">Open next (${state.packs[tier]})</button>`
+    : `<button class="btn orange" data-action="buy-open" data-tier="${tier}" ${state.coins < TIER[tier].cost ? 'disabled' : ''}>Buy Again · ${fmt(TIER[tier].cost)}</button>`;
   $('#gacha-result').innerHTML = `
     <div class="won ${res.rarity}">
       <div class="won-name">${crop.name}</div>
-      <div>${rar(res.rarity)}</div>
       <div class="stats">
         <span>Pays ${coin(G.cropPayout(crop.id, state.level), 16)}${gems ? ` + ${gem(gems, 16)}` : ''}</span>
         <span>Grows in ${RARITY[res.rarity].hours}h</span>
       </div>
-      <div class="actions">
-        <button class="btn orange" data-action="plant-first" data-crop="${crop.id}">Plant now</button>
-        ${again}
-        <button class="btn cream" data-action="close">Close</button>
-      </div>
     </div>`;
+  $('#gacha-actions').innerHTML = `
+    <button class="btn cream" data-action="close">Back</button>
+    <button class="btn cream" data-action="plant-first" data-crop="${crop.id}">Plant now</button>
+    ${again}`;
 }
 
 // --- House -------------------------------------------------------------------

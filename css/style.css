@@ -33,7 +33,7 @@ body {
 
 button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
 img.px { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
-h2, h3, h4 { font-family: var(--font-pixel); font-weight: 700; margin: 0; }
+h2, h3, h4 { font-family: var(--font-pixel); font-weight: 500; margin: 0; }
 
 /* --- Nine-slice pixel boxes ------------------------------------------------- */
 
@@ -48,7 +48,7 @@ h2, h3, h4 { font-family: var(--font-pixel); font-weight: 700; margin: 0; }
   border-image-source: var(--ui-wood);
   color: var(--cream-text);
   font-family: var(--font-pixel);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 15px;
   padding: 0 4px;
   min-height: 40px;
@@ -70,7 +70,7 @@ h2, h3, h4 { font-family: var(--font-pixel); font-weight: 700; margin: 0; }
   border-image-source: var(--ui-sign);
   color: var(--cream-text);
   font-family: var(--font-pixel);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 14px;
   letter-spacing: 1px;
   padding: 0 8px;
@@ -105,7 +105,7 @@ h2, h3, h4 { font-family: var(--font-pixel); font-weight: 700; margin: 0; }
   padding: 0 14px 0 0;
   min-width: 240px;
   font-family: var(--font-pixel);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 20px;
   border-image-source: var(--ui-sign);
   color: var(--cream-text);
@@ -131,7 +131,7 @@ h2, h3, h4 { font-family: var(--font-pixel); font-weight: 700; margin: 0; }
   font-size: 22px;
 }
 .hud .pill span:first-child { margin-left: -4px; }
-.hud .pill .lv { font-family: var(--font-pixel); font-weight: 700; font-size: 14px; color: var(--ink-soft); margin-left: 0; }
+.hud .pill .lv { font-family: var(--font-pixel); font-weight: 500; font-size: 14px; color: var(--ink-soft); margin-left: 0; }
 .hud .pill small { color: var(--ink-soft); font-size: 16px; }
 
 .tabs {
@@ -147,7 +147,7 @@ h2, h3, h4 { font-family: var(--font-pixel); font-weight: 700; margin: 0; }
   border-image-source: var(--ui-sign);
   color: var(--cream-text);
   font-family: var(--font-pixel);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 15px;
   text-shadow: 0 2px 0 var(--wood-dark);
   display: flex;
@@ -283,7 +283,7 @@ main { grid-area: main; min-width: 0; }
 
 .rar {
   font-family: var(--font-pixel);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 12px;
   padding: 1px 6px;
   border: 2px solid var(--ink);
@@ -379,8 +379,8 @@ button.item:hover { filter: brightness(1.05); }
 .portrait.uncommon { background: radial-gradient(circle, #4e8a36 0 58%, #6b4424 60% 66%, var(--ink) 67% 71%, #c88a52 72%); }
 .portrait.epic { background: radial-gradient(circle, #8a3a9a 0 58%, #6b4424 60% 66%, var(--ink) 67% 71%, #c88a52 72%); }
 .portrait.legendary { background: radial-gradient(circle, #b88a1c 0 58%, #6b4424 60% 66%, var(--ink) 67% 71%, #c88a52 72%); }
-.cp-name { font-family: var(--font-pixel); font-weight: 700; font-size: 24px; text-transform: uppercase; }
-.cp-rar { font-family: var(--font-pixel); font-weight: 700; font-size: 16px; }
+.cp-name { font-family: var(--font-pixel); font-weight: 500; font-size: 24px; text-transform: uppercase; }
+.cp-rar { font-family: var(--font-pixel); font-weight: 500; font-size: 16px; }
 .cp-rar.common { color: #e8e2d4; }
 .cp-rar.uncommon { color: #a8f07a; }
 .cp-rar.rare { color: #8ad4ff; }
@@ -394,61 +394,88 @@ button.item:hover { filter: brightness(1.05); }
 .cp-row.gemline b { color: #a8f0ff; }
 .cp-stage { color: #ffe070; font-size: 18px; }
 .panel.crop .segbar { margin-top: 6px; }
-.cp-effect { text-align: center; font-family: var(--font-pixel); font-weight: 700; font-size: 16px; margin-bottom: 12px; }
+.cp-effect { text-align: center; font-family: var(--font-pixel); font-weight: 500; font-size: 16px; margin-bottom: 12px; }
 
-/* Gacha reel. */
-.gacha h3 { text-align: center; }
-.reel-window {
-  position: relative;
-  overflow: hidden;
-  height: 104px;
-  background: #3a2a1c;
-  border: 4px solid var(--ink);
-  box-shadow: inset 0 0 0 3px #6b4424, inset 0 8px 16px rgba(0,0,0,.5);
+/* Gacha: one slot window, the reel falls top to bottom through it. */
+.modal .panel.gacha-panel { width: min(440px, 100%); padding: 22px 8px 8px; overflow: visible; }
+.gacha { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.gacha-title {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 12px solid transparent;
+  border-image: var(--ui-blue) 4 fill / 12px / 0 stretch;
+  image-rendering: pixelated;
+  padding: 0 14px;
+  font-family: var(--font-pixel);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: var(--cream-text);
+  text-shadow: 0 2px 0 #34406e;
+  white-space: nowrap;
 }
-.reel {
+.gacha-box {
+  width: 100%;
   display: flex;
-  gap: 6px;
-  padding: 14px 0 0 0;
-  will-change: transform;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0 18px;
+  background: #6e4a3a;
+  border: 4px solid var(--ink);
+  box-shadow: inset 0 0 0 3px #a8704a, inset 0 6px 12px rgba(0,0,0,.35);
 }
+.gacha-tier { color: #f3d8b0; }
+.slot-window {
+  width: 120px;  /* 112px inside the 4px border = one reel cell */
+  height: 120px;
+  overflow: hidden;
+  background: #4a3024;
+  border: 4px solid var(--ink);
+  box-shadow: 0 0 0 3px #c88a52, inset 0 10px 10px -6px rgba(0,0,0,.6), inset 0 -10px 10px -6px rgba(0,0,0,.6);
+}
+.reel { display: flex; flex-direction: column; will-change: transform; }
 .reel .cell {
   flex: none;
-  width: 70px; height: 70px;
-  display: flex; align-items: center; justify-content: center;
-  background: #f3e2c0;
-  border: 3px solid var(--ink);
-  box-shadow: inset 0 -8px 0 var(--c-common);
+  width: 104px;
+  height: 104px;
+  margin: 4px 0 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(201,194,178,.5), transparent 65%);
 }
-.reel .cell img { width: 48px; height: 48px; }
-.reel .cell.uncommon { box-shadow: inset 0 -8px 0 var(--c-uncommon); }
-.reel .cell.rare { box-shadow: inset 0 -8px 0 var(--c-rare); }
-.reel .cell.epic { box-shadow: inset 0 -8px 0 var(--c-epic); background: #fbe8fc; }
-.reel .cell.legendary { box-shadow: inset 0 -8px 0 var(--c-legendary); background: #fff6cc; }
-.reel .cell.win { animation: winpulse .6s steps(3) 3; outline: 4px solid #fff6c0; outline-offset: -2px; }
-.reel-marker {
-  position: absolute;
-  top: 0; bottom: 0;
-  left: 50%;
-  width: 4px;
-  transform: translateX(-50%);
-  background: #f2c94c;
-  box-shadow: 0 0 0 2px var(--ink);
+.reel .cell img { width: 64px; height: 64px; }
+.reel .cell.uncommon { background: radial-gradient(circle, rgba(143,209,106,.55), transparent 65%); }
+.reel .cell.rare { background: radial-gradient(circle, rgba(90,180,240,.6), transparent 65%); }
+.reel .cell.epic { background: radial-gradient(circle, rgba(214,107,224,.7), transparent 65%); }
+.reel .cell.legendary { background: radial-gradient(circle, rgba(242,201,76,.85), transparent 68%); }
+.reel.spinning .cell img { filter: blur(1.5px); }
+.reel .cell.win img { animation: winpulse .5s steps(3) 3; }
+.slot-label {
+  border: 12px solid transparent;
+  border-image: var(--ui-sign) 4 fill / 12px / 0 stretch;
+  image-rendering: pixelated;
+  padding: 0 12px;
+  min-width: 120px;
+  text-align: center;
+  font-family: var(--font-pixel);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--cream-text);
 }
-.reel-marker::before, .reel-marker::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 8px solid transparent;
-}
-.reel-marker::before { top: -2px; border-top-color: #f2c94c; }
-.reel-marker::after { bottom: -2px; border-bottom-color: #f2c94c; }
-@keyframes winpulse { 50% { transform: scale(1.12); } }
+.slot-label.common { color: #e8e2d4; }
+.slot-label.uncommon { color: #a8f07a; }
+.slot-label.rare { color: #8ad4ff; }
+.slot-label.epic { color: #f0a0f5; }
+.slot-label.legendary { color: #ffe070; }
+@keyframes winpulse { 50% { transform: scale(1.15); } }
 
-.gacha-result { min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 12px; }
+.gacha-result { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 12px; }
 .won { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; animation: pop .35s steps(4); }
-.won-name { font-family: var(--font-pixel); font-weight: 700; font-size: 28px; }
+.won-name { font-family: var(--font-pixel); font-weight: 500; font-size: 28px; }
 .won.legendary .won-name { color: #b88a1c; text-shadow: 0 0 8px #ffe070; }
 .won.epic .won-name { color: #8a3a9a; }
 
@@ -480,7 +507,7 @@ button.item:hover { filter: brightness(1.05); }
   z-index: 45;
   pointer-events: none;
   font-family: var(--font-pixel);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 16px;
   color: #fff6c0;
   transform: translateX(-50%);
