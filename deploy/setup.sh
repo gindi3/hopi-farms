@@ -86,7 +86,7 @@ say "Running the game's tests"
 grep -E '^ℹ (pass|fail)' /tmp/hopi-tests.log || true
 
 # --- systemd -------------------------------------------------------------------------
-if ss -ltnH "sport = :$PORT" | grep -q . && ! systemctl is-active --quiet hopi-farms; then
+if ss -ltnH "sport = :$PORT" | grep . >/dev/null && ! systemctl is-active --quiet hopi-farms; then
   die "port $PORT is already used by something else on this server"
 fi
 
@@ -111,9 +111,17 @@ echo "Game server is running on 127.0.0.1:$PORT"
 say "Adding hopifarms.fun to the Cloudflare Tunnel"
 [ -f "$TUNNEL_CONFIG" ] || die "no tunnel config at $TUNNEL_CONFIG"
 command -v cloudflared >/dev/null || die "cloudflared isn't installed"
-TUNNEL_UNIT="$(systemctl list-units --type=service --all --no-legend --plain | awk '{print $1}' \
-  | while read -r u; do systemctl cat "$u" 2>/dev/null | grep -q "cloudflared.*$TUNNEL_CONFIG" && echo "$u"; done | head -1)"
+# Find the systemd service that runs cloudflared with this config (no early-exit pipes:
+# under pipefail they make the lookup fail even when it finds the unit).
+TUNNEL_UNIT=""
+for u in $(systemctl list-units --type=service --all --no-legend --plain | awk '{print $1}'); do
+  if systemctl cat "$u" 2>/dev/null | grep "cloudflared.*$TUNNEL_CONFIG" >/dev/null; then
+    TUNNEL_UNIT="$u"
+    break
+  fi
+done
 [ -n "$TUNNEL_UNIT" ] || die "couldn't find the systemd service that runs the tunnel"
+echo "Tunnel service: $TUNNEL_UNIT"
 TUNNEL_ID="$(awk '/^tunnel:/{print $2}' "$TUNNEL_CONFIG")"
 
 if grep -q "hostname: hopifarms.fun" "$TUNNEL_CONFIG"; then
@@ -144,7 +152,7 @@ else
     die "the tunnel didn't come back with the new config, so the old one was restored"
   fi
 fi
-cloudflared tunnel --config "$TUNNEL_CONFIG" ingress rule https://hopifarms.fun | grep -q ":$PORT" \
+cloudflared tunnel --config "$TUNNEL_CONFIG" ingress rule https://hopifarms.fun | grep ":$PORT" >/dev/null \
   || die "the tunnel isn't routing hopifarms.fun to port $PORT"
 echo "Tunnel routes hopifarms.fun → 127.0.0.1:$PORT"
 
