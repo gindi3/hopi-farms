@@ -347,6 +347,18 @@ for (const [chest, metal] of Object.entries(CHEST_METAL)) {
     p.layer(box(12, 3, 13, 13), metal);
     p.layer(box(7, 6, 8, 9), metal);
   };
+  // The same chest with its lid flung back and treasure glowing inside.
+  ICONS[`chest_${chest}_open`] = (p) => {
+    p.layer(box(3, 1, 12, 3), ['#a8784a', '#6a4422', '#d4a070']);        // lid, tipped back
+    p.layer(box(2, 1, 3, 3), metal);
+    p.layer(box(12, 1, 13, 3), metal);
+    p.layer(box(2, 7, 13, 13), ['#9a6a3a', '#6a4422', '#c89060']);
+    p.layer(box(3, 5, 12, 7), ['#ffe680', '#f2b62c', '#fff8d0']);        // glowing treasure
+    p.set(5, 5, '#fff8d0'); p.set(9, 4, '#fff8d0'); p.set(11, 5, '#ffffff');
+    p.layer(box(2, 7, 3, 13), metal);
+    p.layer(box(12, 7, 13, 13), metal);
+    p.layer(box(7, 8, 8, 10), metal);
+  };
 }
 
 // --- Public API --------------------------------------------------------------

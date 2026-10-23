@@ -3,11 +3,12 @@
 import * as G from './game.js';
 import {
   GAME_NAME, RARITIES, RARITY, TIERS, TIER, CROP, CROPS, ITEMS, HARVEST_GEMS,
-  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ELIXIR_HOURS, ECON, CHESTS,
+  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ECON, CHESTS, RECIPES, BREW_ODDS, itemId,
 } from './data.js';
 import { applyAction, firstEmptyPlot, seedsBestFirst, MAX_BATCH } from './actions.js';
 import { applyEconomy } from './economy.js';
-import { spriteImg, uiSlice } from './sprites.js';
+import { spriteImg, spriteUrl as spriteUrlFor, uiSlice } from './sprites.js';
+import { sfx, isMuted, setMuted } from './sound.js';
 import {
   SCENE_W, SCENE_H, PLOT_POS, PLOT_SIZE, FARMER_POS, FARMER_SIGN_POS, ZONES, drawFarm, drawValley,
 } from './scene.js';
@@ -174,6 +175,7 @@ function dispatch(action) {
       return result;
     } catch (e) {
       if (e instanceof G.GameError || e instanceof ApiError) {
+        sfx('error');
         toast(e.message, true);
         if (e.status === 401) openProfile();
         return null;
@@ -344,6 +346,12 @@ function plotTooltip(i) {
 
 const gemsFor = (crop) => HARVEST_GEMS[crop.rarity]?.[crop.tier] || 0;
 
+// Potions share a sprite per kind; Standard and Advanced grades glow.
+function itemImg(id, size = 32) {
+  const it = ITEMS[id];
+  return spriteImg(it ? it.kind : id, size, it ? `grade-${it.grade}` : '');
+}
+
 function clickPlot(i, el) {
   const s = plotState(i, now());
   if (s.kind === 'locked') return toast(`This plot unlocks at level ${G.levelUnlockingPlot(i)}.`);
@@ -356,6 +364,7 @@ async function doHarvest(i, el) {
   const rect = el.getBoundingClientRect();
   const res = await dispatch({ type: 'harvest', plot: i });
   if (!res) return;
+  sfx('harvest');
   floatText(`+${fmt(res.coins)} $CROP`, rect.left + rect.width / 2, rect.top);
   if (res.gems) floatText(`+${res.gems} gems${res.firstTime ? ' (first!)' : ''}`, rect.left + rect.width / 2, rect.top + 20);
   updatePlots();
@@ -365,6 +374,7 @@ async function harvestAll() {
   const res = await dispatch({ type: 'harvestAll' });
   if (!res) return;
   if (!res.n) return toast('Nothing is ready yet.');
+  sfx('harvestAll');
   toast(`Harvested ${plural(res.n, 'crop')}: +${fmt(res.coins)} $CROP${res.gems ? `, +${res.gems} gems` : ''}`);
   updatePlots();
 }
@@ -378,7 +388,7 @@ async function plantAll() {
   const res = await dispatch({ type: 'plantAll' });
   if (!res) return;
   if (!res.n) toast(firstEmptyPlot(state) < 0 ? 'Every open plot is planted.' : 'You have no seeds. Buy a pack at the Market.');
-  else { toast(`Planted ${plural(res.n, 'seed')}.`); closeModal(); }
+  else { sfx('plant'); toast(`Planted ${plural(res.n, 'seed')}.`); closeModal(); }
   if (tab === 'farm') updatePlots(); else setTab('farm');
 }
 
@@ -444,10 +454,11 @@ function renderCropPanel() {
     ${gems ? `<div class="cp-row small gemline"><span>Gem bonus</span><b>+${gems} gems</b></div>` : ''}
     <div class="cp-row small"><span>Valley bonus</span><b>RTP ${pct(G.rtp(state.level))}</b></div>
     <hr>
-    <div class="cp-effect">${effects.length ? effects.map(e => ITEMS[e]?.name || e).join(', ') + ' applied' : 'No Active Effect'}</div>
+    <div class="cp-effect">${effects.length ? effects.map(e => ITEMS[e]?.name || e).join(', ') : 'No Active Effect'}</div>
     <div class="actions">
       <button class="btn gem" data-action="finish" data-plot="${i}" ${state.gems < cost ? 'disabled' : ''}>Finish now ${spriteImg('gem', 16)} ${cost}</button>
-      ${state.items.elixir ? `<button class="btn cream" data-action="elixir" data-plot="${i}">${spriteImg('elixir', 16)} Elixir −${ELIXIR_HOURS}h (${state.items.elixir})</button>` : ''}
+      ${Object.keys(state.items).filter(id => ITEMS[id] && (ITEMS[id].kind === 'elixir' || !effects.some(e => ITEMS[e]?.kind === ITEMS[id].kind))).map(id =>
+        `<button class="btn cream small" data-action="use-item" data-item="${id}" data-plot="${i}" title="${esc(ITEMS[id].desc)}">${itemImg(id, 16)} ${esc(ITEMS[id].name)} ×${state.items[id]}</button>`).join('')}
     </div>`;
 }
 
@@ -497,6 +508,42 @@ function renderMarket() {
         </table>
         <div class="muted">Epic and Legendary harvests also pay gems. So does the first harvest of each crop.</div>
       </div>
+      ${chestTablesCard()}
+    </div>`;
+}
+
+// Daily chest drop tables, read from the live chest settings so they match what drops.
+function chestTablesCard() {
+  const label = (kind, chest) => {
+    if (kind === 'produce') return `${TIER[chest.produceTier].label} produce`;
+    if (kind.startsWith('seed:')) return `${TIER[kind.slice(5)].label} seed pack`;
+    return ITEMS[kind]?.name || kind;
+  };
+  const icon = (kind, chest) => {
+    if (kind === 'produce') return spriteImg(`crop:${CROPS.find(c => c.tier === chest.produceTier).id}`, 20);
+    if (kind.startsWith('seed:')) return spriteImg(`pack_${kind.slice(5)}`, 20);
+    return itemImg(kind, 20);
+  };
+  // One row per kind of drop, in a fixed order, across all four chests.
+  const kinds = ['produce', 'elixir', 'pesticide', 'fertilizer', 'seed:feeble', 'seed:pico', 'seed:basic', 'seed:premium'];
+  const levels = CHESTS.map((c, i) => {
+    const next = CHESTS[i + 1];
+    const lo = Math.max(1, c.minLevel);
+    return next ? `Lv ${lo}–${next.minLevel - 1}` : `Lv ${lo}+`;
+  });
+  const chanceOf = (chest, kind) => chest.loot.find(([k]) => k === kind)?.[1] || 0;
+  return `
+    <div class="card wide">
+      <h4>Daily chest drop tables</h4>
+      <div class="muted">Open one chest a day from the House (leveling up refreshes it). Every chest pays gems, plus one drop rolled from its table.</div>
+      <div class="table-wrap"><table class="odds chest-table">
+        <thead><tr><th>Drop</th>${CHESTS.map((c, i) => `<th class="num"><span class="row tight" style="justify-content:flex-end">${spriteImg(`chest_${c.id}`, 22)} ${c.label}</span><span class="muted">${levels[i]}</span></th>`).join('')}</tr></thead>
+        <tbody>
+          <tr><td><span class="row tight">${spriteImg('gem', 20)} Gems</span></td>${CHESTS.map(c => `<td class="num">${c.gems[0]}–${c.gems[1]}</td>`).join('')}</tr>
+          ${kinds.map(k => `<tr><td><span class="row tight">${icon(k, CHESTS[CHESTS.length - 1])} ${label(k, { produceTier: 'pico' }).replace('Pico produce', 'Produce')}</span></td>
+            ${CHESTS.map(c => { const p = chanceOf(c, k); return `<td class="num">${p ? `${(p * 100).toFixed(p < 0.01 ? 2 : 1)}%${k === 'produce' ? ` <span class="muted">(${TIER[c.produceTier].label})</span>` : ''}` : '—'}</td>`; }).join('')}</tr>`).join('')}
+        </tbody>
+      </table></div>
     </div>`;
 }
 
@@ -572,6 +619,22 @@ async function revealPack(tier, buyFirst) {
     }));
     spin.timers.push(setTimeout(() => landSlot(i), ms + 60));
   });
+  tickReel(spin);
+}
+
+// Tick as each crop passes the first slot's window (the reel slows, so ticks slow too).
+function tickReel(run) {
+  const reel = $('#reel-0');
+  let last = null;
+  const step = () => {
+    if (spin !== run || !reel.isConnected || !reel.classList.contains('spinning')) return;
+    const y = new DOMMatrixReadOnly(getComputedStyle(reel).transform).m42;
+    const idx = Math.floor(-y / run.cell);
+    if (last !== null && idx !== last) sfx('tick');
+    last = idx;
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 function landSlot(i) {
@@ -586,6 +649,7 @@ function landSlot(i) {
   const label = $(`#slot-label-${i}`);
   label.textContent = RARITY[r.rarity].label;
   label.className = `slot-label ${r.rarity}`;
+  sfx(r.rarity);
   if (++spin.landed === spin.results.length) showGachaResult();
 }
 
@@ -619,6 +683,127 @@ function showGachaResult() {
     <button class="btn cream big" data-action="close">Back</button>
     <button class="btn cream big" data-action="plant-all">Plant ${results.length === 1 ? 'it' : 'all'}</button>
     ${again}`;
+}
+
+// --- My History ------------------------------------------------------------------
+// All-time totals from the farm's own stats. Per-seed counts started with this page, so
+// pulls from before it show up in the totals but not in the per-seed table.
+
+function renderHistory() {
+  const st = state.stats;
+  const packSpend = st.packSpend || 0;
+  const levelSpend = st.levelSpend || 0;
+  const harvested = st.harvestCoins ?? st.coinsEarned ?? 0;
+  const deposited = st.cropDeposited || 0;
+  const packNet = G.round2(harvested - packSpend);
+  const farmNet = G.round2(harvested - packSpend - levelSpend);
+  const signed = (n) => `<b class="${n > 0 ? 'up' : n < 0 ? 'down' : ''}">${n > 0 ? '+' : ''}${fmt(n)}</b>`;
+  const pulls = st.pulls || {};
+  const pulledTotal = Object.values(pulls).reduce((a, b) => a + b, 0);
+  const rtp = packSpend ? harvested / packSpend : null;
+  view.innerHTML = `
+    <h2 class="section-title">My History</h2>
+    <div class="cards">
+      <div class="card">
+        <h4>All-time $CROP</h4>
+        <table class="odds">
+          <tr><td>Spent on seed packs</td><td class="num">−${fmt(packSpend)}</td></tr>
+          <tr><td>Redeemed from harvests</td><td class="num">+${fmt(harvested)}</td></tr>
+          <tr><td><b>Net from packs</b></td><td class="num">${signed(packNet)}</td></tr>
+          <tr><td>Spent on valley levels</td><td class="num">−${fmt(levelSpend)}</td></tr>
+          <tr><td><b>Net from farming</b></td><td class="num">${signed(farmNet)}</td></tr>
+          <tr><td>Deposited from your wallet</td><td class="num">+${fmt(deposited)}</td></tr>
+          <tr><td>Balance now</td><td class="num">${fmt(state.coins)}</td></tr>
+        </table>
+        <div class="muted">${rtp === null ? 'Open a pack to start your history.' : `Your harvests have paid back ${pct(rtp)} of what you spent on packs. Crops still growing will add to this when you harvest them.`}</div>
+      </div>
+      <div class="card">
+        <h4>Activity</h4>
+        <table class="odds">
+          <tr><td>Packs opened</td><td class="num">${fmt(st.packsOpened, 0)}</td></tr>
+          <tr><td>Harvests</td><td class="num">${fmt(st.harvests, 0)}</td></tr>
+          <tr><td>Potions brewed</td><td class="num">${fmt(st.brews || 0, 0)}</td></tr>
+          <tr><td>Valley level</td><td class="num">${state.level}</td></tr>
+          <tr><td>XP</td><td class="num">${fmt(state.xp, 0)}</td></tr>
+        </table>
+        <h4 style="margin-top:8px">Spent by pack</h4>
+        <table class="odds">${TIERS.map(t => `<tr><td>${spriteImg(`pack_${t}`, 20)}</td><td>${TIER[t].label}</td><td class="num">${fmt(st.spentByTier?.[t] || 0)} $CROP</td></tr>`).join('')}</table>
+      </div>
+      <div class="card wide">
+        <h4>Seeds pulled from packs</h4>
+        ${pulledTotal ? `<div class="table-wrap"><table class="odds history">
+          <thead><tr><th>Seed</th><th>Pack</th><th>Rarity</th><th class="num">Pulled</th><th class="num">Share</th><th class="num">Redeemed</th></tr></thead>
+          <tbody>${CROPS.filter(c => pulls[c.id] || st.harvestedBy?.[c.id]).sort((a, b) =>
+            TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier) || RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity)).map(c => `
+            <tr><td><span class="row tight">${spriteImg(`crop:${c.id}`, 22)} ${c.name}</span></td><td>${TIER[c.tier].label}</td><td>${rar(c.rarity)}</td>
+              <td class="num">${fmt(pulls[c.id] || 0, 0)}</td><td class="num">${pulls[c.id] ? pct(pulls[c.id] / pulledTotal, 1) : '—'}</td>
+              <td class="num">${fmt(st.harvestedBy?.[c.id] || 0)} $CROP</td></tr>`).join('')}
+          </tbody></table></div>` : '<p class="empty-note">No pulls recorded yet. Every pack you open from now on shows up here.</p>'}
+        ${st.packsOpened > pulledTotal ? `<div class="muted">${fmt(st.packsOpened - pulledTotal, 0)} earlier pack${st.packsOpened - pulledTotal === 1 ? '' : 's'} opened before seed tracking started are counted in the totals only.</div>` : ''}
+      </div>
+    </div>`;
+}
+
+// --- Potions Master ---------------------------------------------------------------
+
+function renderPotions() {
+  const owned = Object.entries(state.items).filter(([id]) => ITEMS[id]);
+  view.innerHTML = `
+    <h2 class="section-title">Potions Master</h2>
+    <div class="cards">
+      ${Object.entries(RECIPES).map(([id, r]) => `
+        <div class="card">
+          <div class="row">${itemImg(id, 48)}<div><h4>${r.name}</h4><div class="muted">+${fmt(r.xp, 0)} XP for a good brew</div></div></div>
+          <table class="odds">${[1, 2, 3].map(g => { const it = ITEMS[itemId(id, g)]; return `<tr><td>${itemImg(itemId(id, g), 20)}</td><td>${it.name.split(' ')[0]}</td><td>${esc(it.desc)}</td></tr>`; }).join('')}</table>
+          ${r.options.map((o, k) => {
+            const have = G.recipeStock(state, o);
+            const crops = CROPS.filter(c => c.tier === o.tier && c.rarity === o.rarity);
+            return `<div class="recipe">
+              <div class="row tight">${crops.map(c => `<span title="${c.name}">${spriteImg(`crop:${c.id}`, 24)}</span>`).join('')}
+                <span>${o.count} ${RARITY[o.rarity].label} ${TIER[o.tier].label} produce</span></div>
+              <div class="row"><span class="muted">You have ${fmt(have, 0)}</span>
+                <button class="btn ${have >= o.count ? 'orange' : 'cream'} small" data-action="brew" data-recipe="${id}" data-option="${k}" ${have >= o.count ? '' : 'disabled'}>Brew</button></div>
+            </div>`;
+          }).join('<div class="or">or</div>')}
+        </div>`).join('')}
+      <div class="card">
+        <h4>Brewing odds</h4>
+        <table class="odds">${BREW_ODDS.map(o => `<tr><td>${o.grade ? o.label : 'Disaster (produce lost)'}</td><td class="num">${(o.chance * 100).toFixed(1)}%</td></tr>`).join('')}</table>
+        <div class="muted">Apply potions from a growing crop's panel on the Farm. A crop can take one Pesticide and one Fertilizer, and any number of Elixirs.</div>
+      </div>
+      <div class="card wide">
+        <h4>Your potions</h4>
+        ${owned.length ? `<div class="list">${owned.map(([id, n]) => `<div class="item slot">${itemImg(id, 32)}<span class="meta"><b>${ITEMS[id].name}</b><span>${ITEMS[id].desc}</span></span><span class="qty">×${n}</span></div>`).join('')}</div>` : '<p class="empty-note">No potions yet. Harvest Epic and Legendary crops to collect produce for brewing.</p>'}
+      </div>
+    </div>`;
+}
+
+async function brew(recipe, option) {
+  openModal(`
+    <div class="reveal brew">
+      <div class="stage cauldron" id="brew-stage">${itemImg(recipe, 112)}<span class="bubbles"><i></i><i></i><i></i><i></i></span></div>
+      <h4 id="brew-title">Brewing ${RECIPES[recipe].name}…</h4>
+      <div id="brew-body"></div>
+    </div>`);
+  sfx('brew');
+  const [res] = await Promise.all([dispatch({ type: 'craft', recipe, option }), new Promise(r => setTimeout(r, 1300))]);
+  const stage = $('#brew-stage');
+  if (!res || !stage) { closeModal(); return; }
+  stage.querySelector('.bubbles')?.remove();
+  if (!res.grade) {
+    sfx('fizzle');
+    stage.className = 'stage fizzled';
+    $('#brew-title').textContent = 'The brew fizzled!';
+    $('#brew-body').innerHTML = `<p class="muted">The produce was lost. Better luck next time.</p>`;
+  } else {
+    sfx(res.grade > 1 ? 'rare' : 'success');
+    stage.className = `stage pop grade-glow-${res.grade}`;
+    stage.innerHTML = itemImg(res.item, 112);
+    $('#brew-title').textContent = ITEMS[res.item].name;
+    $('#brew-body').innerHTML = `<p class="muted">${esc(ITEMS[res.item].desc)} · +${fmt(res.xp, 0)} XP</p>`;
+  }
+  $('#brew-body').insertAdjacentHTML('beforeend', `<div class="actions"><button class="btn cream" data-action="close">Close</button>${G.recipeStock(state, RECIPES[recipe].options[option]) >= RECIPES[recipe].options[option].count ? `<button class="btn orange" data-action="brew" data-recipe="${recipe}" data-option="${option}">Brew again</button>` : ''}</div>`);
+  if (tab === 'potions') renderPotions();
 }
 
 // --- House -------------------------------------------------------------------
@@ -745,24 +930,48 @@ async function linkWallet() {
   }
 }
 
+// Treasure-chest opening: the chest rattles while the server rolls, then the lid flies
+// open with light rays and sparkles, gems count up, and the prize pops out.
 async function openChest() {
-  const res = await dispatch({ type: 'claimChest' });
-  if (!res) return;
-  let prize;
-  if (res.drop === 'produce') prize = `${spriteImg(`crop:${res.cropId}`, 32)} 1 ${CROP[res.cropId].name} (produce)`;
-  else if (res.tier) prize = `${spriteImg(`pack_${res.tier}`, 32)} A ${TIER[res.tier].label} seed pack!`;
-  else prize = `${spriteImg(res.item, 32)} ${ITEMS[res.item].name}`;
+  const tierId = G.chestFor(state.level).id;
   openModal(`
-    <div class="reveal">
-      <div class="stage pop">${spriteImg(`chest_${res.chest}`, 128)}</div>
-      <h4>Chest opened!</h4>
-      <div class="stats">${gem(res.gems)}</div>
-      <div class="row">${prize}</div>
+    <div class="reveal treasure">
+      <div class="chest-stage rattling" id="chest-stage">
+        <div class="rays"></div>
+        ${spriteImg(`chest_${tierId}`, 144, 'chest-img')}
+        <div class="sparkles">${'<i></i>'.repeat(10)}</div>
+      </div>
+      <h4 id="chest-title">${G.chestFor(state.level).label} Chest</h4>
+      <div id="chest-body" class="muted">Opening…</div>
+    </div>`);
+  sfx('chestRattle');
+  const [res] = await Promise.all([dispatch({ type: 'claimChest' }), new Promise(r => setTimeout(r, 1100))]);
+  const stage = $('#chest-stage');
+  if (!stage) return;
+  if (!res) { closeModal(); return; }
+  stage.classList.remove('rattling');
+  stage.classList.add('open');
+  stage.querySelector('.chest-img').src = spriteUrlFor(`chest_${res.chest}_open`);
+  sfx('chestOpen');
+  let prize;
+  if (res.drop === 'produce') prize = `${spriteImg(`crop:${res.cropId}`, 48)}<span>1 ${CROP[res.cropId].name} (produce)</span>`;
+  else if (res.tier) prize = `${spriteImg(`pack_${res.tier}`, 48)}<span>A ${TIER[res.tier].label} seed pack!</span>`;
+  else prize = `${itemImg(res.item, 48)}<span>${ITEMS[res.item].name}</span>`;
+  $('#chest-title').textContent = 'Treasure!';
+  $('#chest-body').outerHTML = `
+    <div class="treasure-loot">
+      <div class="loot-gems">${spriteImg('gem', 28)}<b id="gem-count">+0</b><span>gems</span></div>
+      <div class="loot-prize">${prize}</div>
       <div class="actions">
         ${res.tier ? `<button class="btn orange" data-action="open" data-tier="${res.tier}">Spin pack</button>` : ''}
         <button class="btn cream" data-action="close">Close</button>
       </div>
-    </div>`);
+    </div>`;
+  // Count the gems up.
+  const counter = $('#gem-count');
+  for (let k = 1; k <= res.gems; k++) {
+    setTimeout(() => { if (counter.isConnected) { counter.textContent = `+${k}`; sfx('tick'); } }, 250 + k * Math.min(90, 900 / res.gems));
+  }
   if (tab === 'house') renderHouse();
 }
 
@@ -792,12 +1001,12 @@ function renderBackpack() {
         <h4>Produce</h4>
         ${produce.length ? `<div class="list">${produce.map(([id, n]) => `
           <div class="item slot">${spriteImg(`crop:${id}`, 32)}<span class="meta"><b>${CROP[id].name}</b><span>${TIER[CROP[id].tier].label} · ${RARITY[CROP[id].rarity].label}</span></span><span class="qty">×${n}</span></div>`).join('')}</div>
-          <div class="muted">Produce will be used by the Potions Master (coming soon).</div>` : '<p class="empty-note">Harvest crops to collect produce.</p>'}
+          <div class="muted">Brew produce into potions at the Potions Master.</div>` : '<p class="empty-note">Harvest crops to collect produce.</p>'}
       </div>
       <div class="card wide">
         <h4>Items</h4>
         ${items.length ? `<div class="list">${items.map(([id, n]) => `
-          <div class="item slot">${spriteImg(id, 32)}<span class="meta"><b>${ITEMS[id].name}</b><span>${ITEMS[id].desc}</span></span><span class="qty">×${n}</span></div>`).join('')}</div>` : '<p class="empty-note">Daily chests can drop potions.</p>'}
+          <div class="item slot">${itemImg(id, 32)}<span class="meta"><b>${ITEMS[id].name}</b><span>${ITEMS[id].desc}</span></span><span class="qty">×${n}</span></div>`).join('')}</div>` : '<p class="empty-note">Daily chests can drop potions, and the Potions Master brews them.</p>'}
       </div>
     </div>`;
 }
@@ -838,9 +1047,10 @@ function floatText(text, x, y) {
 
 // --- Routing and events ------------------------------------------------------
 
-const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, house: renderHouse, backpack: renderBackpack, leaders: renderLeaders };
+const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, potions: renderPotions, house: renderHouse, backpack: renderBackpack, history: renderHistory, leaders: renderLeaders };
 
 function setTab(name) {
+  if (name !== tab) sfx('click');
   tab = name;
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   hideTooltip();
@@ -854,6 +1064,7 @@ function refresh() {
 
 async function plantFirst(cropId) {
   if (await dispatch({ type: 'plantFirst', cropId })) {
+    sfx('plant');
     toast(`Planted ${CROP[cropId].name}.`);
     closeModal();
     refresh();
@@ -994,16 +1205,19 @@ document.addEventListener('click', (e) => {
     case 'profile-login': return openProfile('login');
     case 'logout': return logout();
     case 'plant':
-      return dispatch({ type: 'plant', plot: Number(plot), cropId: crop }).then(r => { if (r) { closeModal(); refresh(); } });
+      return dispatch({ type: 'plant', plot: Number(plot), cropId: crop }).then(r => { if (r) { sfx('plant'); closeModal(); refresh(); } });
     case 'plant-first': return plantFirst(crop);
     case 'plant-all': return plantAll();
     case 'harvest-all': return harvestAll();
     case 'finish':
       return dispatch({ type: 'finishNow', plot: Number(plot) }).then(r => { if (r) { toast('Crop finished!'); closeModal(); refresh(); } });
-    case 'elixir':
-      return dispatch({ type: 'useElixir', plot: Number(plot) }).then(r => {
-        if (r) { toast(`Growth Elixir used: −${ELIXIR_HOURS}h.`); renderCropPanel(); refresh(); }
+    case 'use-item': {
+      const id = el.dataset.item;
+      return dispatch({ type: 'useItem', plot: Number(plot), item: id }).then(r => {
+        if (r) { sfx('potion'); toast(`${ITEMS[id].name} used: ${ITEMS[id].desc}`); renderCropPanel(); refresh(); }
       });
+    }
+    case 'brew': return brew(el.dataset.recipe, Number(el.dataset.option));
     case 'buy-open': return revealPack(tier, true).then(refresh);
     case 'open': return revealPack(tier, false).then(refresh);
     case 'skip-spin': return finishSpin();
@@ -1011,8 +1225,18 @@ document.addEventListener('click', (e) => {
       setQty(tier, Number(el.dataset.n));
       return renderMarket();
     case 'level-up':
-      return dispatch({ type: 'levelUp' }).then(r => { if (r) { toast(`Valley level ${r.level}! +${r.gems} gems`); refresh(); } });
+      return dispatch({ type: 'levelUp' }).then(r => {
+        if (!r) return;
+        sfx('levelUp');
+        toast(`Valley level ${r.level}! +${r.gems} gems${r.chestRefreshed ? ' · your daily chest is ready again' : ''}`);
+        refresh();
+      });
     case 'chest': return openChest();
+    case 'sound': {
+      setMuted(!isMuted());
+      renderSoundButton();
+      return;
+    }
     case 'link-wallet': return linkWallet();
     case 'deposit':
       openModal(`<div id="crop-card" class="deposit-panel"><h3>Deposit $CROP</h3><p class="muted">Loading…</p></div>`);
@@ -1087,6 +1311,7 @@ function syncFarm() {
   api('GET', '/me').then((data) => {
     const before = state.coins;
     adopt(data);
+    if (state.coins > before + 0.001) sfx('coins');
     if (state.coins > before + 0.001) toast(`+${fmt(G.round2(state.coins - before))} $CROP arrived.`);
     refresh();
   }).catch(() => {});
@@ -1136,6 +1361,13 @@ if (SPEED > 1 && !ONLINE) {
   dev.hidden = false;
   dev.textContent = `Dev speed ×${SPEED}`;
 }
+function renderSoundButton() {
+  const b = $('#sound-btn');
+  if (!b) return;
+  b.textContent = isMuted() ? 'Sound off' : 'Sound on';
+  b.setAttribute('aria-pressed', String(!isMuted()));
+}
+renderSoundButton();
 document.title = GAME_NAME;
 
 async function boot() {

@@ -69,13 +69,13 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
     }
 
     case 'harvest':
-      return G.harvest(state, plot, now);
+      return G.harvest(state, plot, now, rng);
 
     case 'harvestAll': {
       let n = 0, coins = 0, gems = 0;
       state.plots.forEach((p, i) => {
         if (p && G.plotProgress(p, now).ready) {
-          const r = G.harvest(state, i, now);
+          const r = G.harvest(state, i, now, rng);
           n++; coins += r.coins; gems += r.gems;
         }
       });
@@ -85,12 +85,14 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
     case 'finishNow':
       return G.finishNow(state, plot, now);
 
-    case 'useElixir': {
-      const r = G.useElixir(state, plot, now);
-      const p = state.plots[plot];
-      p.effects = [...(p.effects || []), 'elixir'];
-      return r;
-    }
+    case 'useElixir':
+      return G.useElixir(state, plot, now);
+
+    case 'useItem':
+      return G.useItem(state, plot, String(action.item || ''), now);
+
+    case 'craft':
+      return G.craft(state, String(action.recipe || ''), Number(action.option), rng);
 
     case 'levelUp':
       return G.levelUp(state);

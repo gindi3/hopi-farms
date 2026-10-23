@@ -109,11 +109,33 @@ export const CHESTS = [
     loot: [['produce', 0.55], ['elixir', 0.06], ['pesticide', 0.08], ['fertilizer', 0.02], ['seed:feeble', 0.099], ['seed:pico', 0.15], ['seed:basic', 0.04], ['seed:premium', 0.001]] },
 ];
 
+// Potions, in three grades each. Apply them to a growing crop from its panel.
+//   elixir: hours cut from the grow time · pesticide: extra produce at harvest ·
+//   fertilizer: bonus share of harvest XP and produce (never $CROP, to respect the RTP cap).
+// The original ids (elixir, pesticide, fertilizer) are the Lesser grade, which chests drop.
+const GRADES = ['Lesser', 'Standard', 'Advanced'];
+const potion = (kind, name, values, describe) => Object.fromEntries(values.map((v, i) => [
+  i === 0 ? kind : `${kind}${i + 1}`,
+  { kind, grade: i + 1, value: v, name: `${GRADES[i]} ${name}`, desc: describe(v) },
+]));
 export const ITEMS = {
-  elixir:     { name: 'Growth Elixir', desc: 'Cuts 3h off a growing crop.' },
-  pesticide:  { name: 'Pesticide',     desc: 'Used by the Potions Master (coming soon).' },
-  fertilizer: { name: 'Fertilizer',    desc: 'Used by the Potions Master (coming soon).' },
+  ...potion('elixir', 'Growth Elixir', [3, 6, 12], (v) => `Cuts ${v}h off a growing crop.`),
+  ...potion('pesticide', 'Pesticide', [1, 2, 3], (v) => `+${v} produce when the crop is harvested.`),
+  ...potion('fertilizer', 'Fertilizer', [0.04, 0.06, 0.08], (v) => `+${v * 100}% harvest XP and produce.`),
 };
+export const itemId = (kind, grade) => (grade === 1 ? kind : `${kind}${grade}`);
 
-export const ELIXIR_HOURS = 3;
+// Potions Master recipes: pick one option, burn that produce, and roll a brewing outcome.
+export const RECIPES = {
+  elixir:     { name: 'Growth Elixir', xp: 75,   options: [{ tier: 'pico', rarity: 'legendary', count: 2 }, { tier: 'pico', rarity: 'epic', count: 8 }] },
+  pesticide:  { name: 'Pesticide',     xp: 250,  options: [{ tier: 'basic', rarity: 'legendary', count: 2 }, { tier: 'basic', rarity: 'epic', count: 4 }] },
+  fertilizer: { name: 'Fertilizer',    xp: 2000, options: [{ tier: 'pico', rarity: 'legendary', count: 2 }, { tier: 'pico', rarity: 'epic', count: 4 }] },
+};
+// Grade 0 = the brew fizzles and the produce is lost.
+export const BREW_ODDS = [
+  { grade: 0, label: 'Disaster', chance: 0.10 },
+  { grade: 1, label: 'Lesser', chance: 0.825 },
+  { grade: 2, label: 'Standard', chance: 0.06 },
+  { grade: 3, label: 'Advanced', chance: 0.015 },
+];
 export const HOUR_MS = 3600 * 1000;

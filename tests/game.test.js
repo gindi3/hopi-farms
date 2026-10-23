@@ -86,7 +86,7 @@ test('finish now costs 1 gem per hour left, rounded up', () => {
 test('level up pays gems and spends coins', () => {
   const s = G.newGame();
   const r = G.levelUp(s);   // starts with 100 coins; level 1 costs 100
-  assert.deepEqual(r, { level: 1, gems: 10 });
+  assert.deepEqual(r, { level: 1, gems: 10, chestRefreshed: false });
   assert.equal(s.coins, 0);
   s.coins = 124;
   assert.throws(() => G.levelUp(s), G.GameError);   // level 2 costs 125
@@ -119,4 +119,64 @@ test('simulated RTP over many packs is near 95.56%', () => {
     got += G.cropPayout(cropId, 0);
   }
   near(got / paid, 0.9556, 0.01);
+});
+
+test('leveling up refreshes the daily chest', () => {
+  const s = G.newGame();
+  const day = new Date(2026, 9, 23, 10).getTime();
+  G.claimChest(s, day, () => 0);
+  assert.equal(G.canClaimChest(s, day), false);
+  const r = G.levelUp(s);
+  assert.equal(r.chestRefreshed, true);
+  assert.equal(G.canClaimChest(s, day), true);
+});
+
+test('brewing burns produce and rolls a grade; disasters waste it', () => {
+  const s = G.newGame();
+  s.produce = { radish: 5, onion: 3 };
+  // rng 0.5 → Lesser (after the 10% disaster band)
+  const ok = G.craft(s, 'elixir', 0, () => 0.5);
+  assert.deepEqual(ok, { recipe: 'elixir', grade: 1, item: 'elixir', xp: 75 });
+  assert.equal(s.produce.radish, 3);
+  assert.equal(s.items.elixir, 1);
+  const bad = G.craft(s, 'elixir', 0, () => 0.05);       // disaster
+  assert.equal(bad.grade, 0);
+  assert.equal(s.produce.radish, 1);
+  assert.throws(() => G.craft(s, 'elixir', 0, () => 0.5), /need 2 Legendary Pico/);
+  const adv = G.craft(s, 'fertilizer', 0, () => 0.99, s.produce.radish = 2);   // top 1.5% → Advanced
+  assert.equal(adv.item, 'fertilizer3');
+  assert.throws(() => G.craft(s, 'nope', 0), /Unknown recipe/);
+});
+
+test('potions: elixir speeds growth; pesticide and fertilizer pay off at harvest', () => {
+  const s = G.newGame();
+  s.items = { elixir2: 1, pesticide3: 1, fertilizer3: 1 };
+  G.plant(s, 0, 'f_lettuce', 0);                         // 4h crop
+  G.useItem(s, 0, 'elixir2', 0);                          // −6h → ready now
+  assert.ok(G.plotProgress(s.plots[0], 0).ready);
+  assert.throws(() => G.useItem(s, 0, 'pesticide3', 0), /already ready/);
+
+  s.seeds = { f_cabbage: 1 };
+  G.plant(s, 1, 'f_cabbage', 0);                          // 8h crop
+  G.useItem(s, 1, 'pesticide3', 0);
+  G.useItem(s, 1, 'fertilizer3', 0);
+  s.items.pesticide = 1;
+  assert.throws(() => G.useItem(s, 1, 'pesticide', 0), /already has Pesticide/);
+  const r = G.harvest(s, 1, 8 * 3600e3, () => 0);         // fertilizer's extra produce roll hits
+  assert.equal(r.produce, 1 + 3 + 1);
+  assert.equal(s.produce.f_cabbage, 5);
+  assert.equal(r.xp, Math.round(1 * 1.08));
+  assert.equal(r.coins, G.cropPayout('f_cabbage', 0));    // never extra $CROP
+});
+
+test('history counters: pulls per crop, spend per tier, payouts per crop', () => {
+  const s = G.newGame();
+  G.buyPack(s, 'pico');
+  G.openPack(s, 'pico', () => 0);                         // potato
+  G.plant(s, 0, 'potato', 0);
+  G.harvest(s, 0, 3 * 3600e3);
+  assert.equal(s.stats.pulls.potato, 1);
+  assert.equal(s.stats.spentByTier.pico, 20);
+  assert.equal(s.stats.harvestedBy.potato, 10);
+  assert.equal(s.stats.harvestCoins, 10);
 });

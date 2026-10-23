@@ -681,3 +681,77 @@ code.addr.small { font-size: 11px; padding: 1px 4px; border-width: 1px; }
 
 /* Unit labels on the top-bar boxes, so gems and XP can't be mixed up. */
 .hud .pill small.unit { font-family: var(--font-pixel); font-size: 12px; color: var(--ink-soft); margin-left: -2px; }
+
+/* Potions. */
+img.px.grade-2 { filter: drop-shadow(0 0 3px #8ad4ff); }
+img.px.grade-3 { filter: drop-shadow(0 0 4px #ffe070) drop-shadow(0 0 2px #ffe070); }
+.recipe { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; }
+.recipe .row { justify-content: space-between; }
+.or { text-align: center; color: var(--ink-soft); font-size: 16px; }
+.stage.cauldron { position: relative; animation: wobble .5s steps(2) infinite; }
+.stage.cauldron .bubbles i {
+  position: absolute; bottom: 40%; width: 10px; height: 10px; border: 2px solid var(--outline);
+  background: #a6f0a0; border-radius: 50%; animation: bubble 1.1s steps(6) infinite;
+}
+.stage.cauldron .bubbles i:nth-child(1) { left: 38%; animation-delay: 0s; }
+.stage.cauldron .bubbles i:nth-child(2) { left: 50%; animation-delay: .3s; }
+.stage.cauldron .bubbles i:nth-child(3) { left: 58%; animation-delay: .6s; }
+.stage.cauldron .bubbles i:nth-child(4) { left: 45%; animation-delay: .85s; }
+.stage.fizzled img { filter: grayscale(1) brightness(.7); }
+.grade-glow-2 { background: radial-gradient(circle, rgba(90,180,240,.7), transparent 66%); border-radius: 50%; }
+.grade-glow-3 { background: radial-gradient(circle, rgba(242,201,76,.95), transparent 70%); border-radius: 50%; }
+@keyframes wobble { 50% { transform: rotate(-4deg) translateY(-2px); } }
+@keyframes bubble { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-70px); opacity: 0; } }
+
+/* History. */
+b.up { color: #2f8a3a; }
+b.down { color: #b8402e; }
+
+/* Sound toggle in the top bar. */
+.hud .sound-btn { font-family: var(--font-pixel); font-size: 13px; color: var(--ink-soft); cursor: pointer; padding: 0 6px; }
+
+/* Treasure chest opening. */
+.treasure .chest-stage {
+  position: relative; width: 220px; height: 200px;
+  display: flex; align-items: center; justify-content: center;
+}
+.treasure .chest-img { position: relative; z-index: 2; }
+.treasure .rattling .chest-img { animation: rattle .12s steps(2) infinite; }
+.treasure .rays {
+  position: absolute; inset: -20px; z-index: 1; opacity: 0;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 230, 128, .55) 0 10deg, transparent 10deg 24deg);
+  -webkit-mask: radial-gradient(circle, #000 20%, transparent 68%);
+          mask: radial-gradient(circle, #000 20%, transparent 68%);
+}
+.treasure .open .rays { opacity: 1; animation: spin-rays 6s linear infinite, fade-in .3s ease-out; }
+.treasure .open .chest-img { animation: chest-pop .45s steps(5); }
+.treasure .sparkles i {
+  position: absolute; z-index: 3; left: 50%; top: 48%; width: 8px; height: 8px; opacity: 0;
+  background: #fff6c0; box-shadow: 0 0 0 2px #f2c94c;
+  transform: rotate(45deg);
+}
+.treasure .open .sparkles i { animation: sparkle .9s ease-out forwards; }
+.treasure .open .sparkles i:nth-child(1) { --dx: -90px; --dy: -70px; }
+.treasure .open .sparkles i:nth-child(2) { --dx: 80px; --dy: -80px; animation-delay: .05s; }
+.treasure .open .sparkles i:nth-child(3) { --dx: -110px; --dy: 0; animation-delay: .1s; }
+.treasure .open .sparkles i:nth-child(4) { --dx: 105px; --dy: 10px; animation-delay: .12s; }
+.treasure .open .sparkles i:nth-child(5) { --dx: -50px; --dy: -110px; animation-delay: .08s; }
+.treasure .open .sparkles i:nth-child(6) { --dx: 40px; --dy: -115px; animation-delay: .15s; }
+.treasure .open .sparkles i:nth-child(7) { --dx: -80px; --dy: 60px; animation-delay: .2s; }
+.treasure .open .sparkles i:nth-child(8) { --dx: 85px; --dy: 65px; animation-delay: .18s; }
+.treasure .open .sparkles i:nth-child(9) { --dx: 0; --dy: -125px; animation-delay: .1s; }
+.treasure .open .sparkles i:nth-child(10) { --dx: 0; --dy: 90px; animation-delay: .25s; }
+.treasure-loot { display: flex; flex-direction: column; align-items: center; gap: 10px; animation: pop .4s steps(4) .25s both; }
+.loot-gems { display: flex; align-items: center; gap: 6px; font-family: var(--font-pixel); font-size: 26px; }
+.loot-gems span { font-size: 16px; color: var(--ink-soft); }
+.loot-prize { display: flex; align-items: center; gap: 10px; font-size: 22px; }
+@keyframes rattle { 0% { transform: translate(-3px, 0) rotate(-3deg); } 100% { transform: translate(3px, -2px) rotate(3deg); } }
+@keyframes chest-pop { 0% { transform: scale(.8); } 60% { transform: scale(1.18) translateY(-8px); } 100% { transform: scale(1); } }
+@keyframes spin-rays { to { transform: rotate(360deg); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes sparkle {
+  0% { opacity: 1; transform: translate(-50%, -50%) rotate(45deg) scale(.4); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(45deg) scale(1.2); }
+}
+
+.chest-table th .muted { display: block; font-size: 15px; font-weight: normal; }

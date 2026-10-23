@@ -47,6 +47,7 @@ export const ZONES = [
   { id: 'house',  label: 'HOUSE',       x: 18,  y: 62,  w: 128, h: 82, sign: { x: 70,  y: 58 } },
   { id: 'market', label: 'MARKETPLACE', x: 16,  y: 152, w: 134, h: 72, sign: { x: 84,  y: 148 } },
   { id: 'farm',   label: 'FARM',        x: 248, y: 66,  w: 132, h: 86, sign: { x: 314, y: 62 } },
+  { id: 'potions', label: 'POTIONS',    x: 238, y: 164, w: 46,  h: 30, sign: { x: 261, y: 170 } },
 ];
 
 // --- Painter -----------------------------------------------------------------
