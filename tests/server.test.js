@@ -6,7 +6,7 @@ import { createServer } from '../server/index.js';
 let server, base;
 
 before(async () => {
-  server = createServer({ dbFile: ':memory:', devSpeed: 3600 * 1000, log: { error() {} } });
+  server = createServer({ dbFile: ':memory:', devSpeed: 3600 * 1000, rateLimits: false, log: { error() {}, info() {} } });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -255,4 +255,36 @@ test('the admin page is served with versioned code', async () => {
   const page = await call('GET', '/admin');
   assert.equal(page.status, 200);
   assert.match(page.data, /src="\/v\/[0-9a-f]+\/js\/admin\.js"/);
+});
+
+test('the leaderboard skips farms that never played', async () => {
+  const idle = await guest();
+  await call('POST', '/api/action', { token: idle.token, body: { type: 'rename', name: 'Idle Visitor' } });
+  const lb = await call('GET', '/api/leaderboard');
+  assert.ok(!lb.data.top.some(r => r.name === 'Idle Visitor'));
+  assert.ok(lb.data.top.every(r => r.xp > 0));
+});
+
+test('unplayed guest farms are removed after a day; played ones and accounts stay', async () => {
+  const idle = await guest();
+  const played = await guest();
+  await call('POST', '/api/action', { token: played.token, body: { type: 'buyOpen', tier: 'feeble' } });
+  const before = server.store.allFarms().length;
+  assert.equal(server.store.pruneGuests(Date.now() - 24 * 3600e3), 0);   // too new to remove
+  const removed = server.store.pruneGuests(Date.now() + 1000);            // pretend a day passed
+  assert.ok(removed >= 1);
+  assert.equal((await call('GET', '/api/me', { token: idle.token })).status, 401);
+  assert.equal((await call('GET', '/api/me', { token: played.token })).status, 200);
+  assert.ok(server.store.allFarms().length < before);
+  assert.ok(server.store.allFarms().every(f => f.username || JSON.parse(f.state).xp > 0));
+});
+
+test('the farmer icon is served and linked from the page', async () => {
+  const page = await call('GET', '/');
+  const m = /<link rel="icon" type="image\/svg\+xml" href="(\/v\/[0-9a-f]+\/brand\/icon\.svg)">/.exec(page.data);
+  assert.ok(m);
+  const res = await fetch(base + m[1]);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /svg/);
+  assert.equal((await call('GET', '/brand/make_logo.py')).status, 404);
 });

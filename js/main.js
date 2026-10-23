@@ -1015,7 +1015,7 @@ function showIntro() {
   openModal(`
     <h3>Welcome to ${GAME_NAME}!</h3>
     <div class="reveal">
-      ${spriteImg('farmer', 96)}
+      <img class="px intro-logo" src="brand/logo.svg" width="136" height="168" alt="The Hopi Farms farmer" draggable="false">
       <p>Here are ${fmt(state.coins)} coins and a few Feeble seeds to get started.</p>
       <p class="muted">Plant seeds, wait for them to grow, and harvest them for coins. Spin seed packs at the Market. Rarer crops pay more and some pay gems. Level up your valley in the House for more plots and better returns.</p>
       <div class="actions"><button class="btn orange" data-action="plant-all">Plant my seeds</button></div>

@@ -63,7 +63,8 @@ export function adminRoutes({ store, ok, bad, loadFarm, onEconomyChange }) {
 
     'GET /api/admin/overview': () => {
       const now = Date.now();
-      const farms = store.allFarms().map(r => summarize(r, now));
+      const all = store.allFarms().map(r => summarize(r, now));
+      const farms = all.filter(f => f.xp > 0 || f.username);      // played, or has an account
       const sum = (k) => G.round2(farms.reduce((a, f) => a + (f[k] || 0), 0));
       const levels = Array.from({ length: MAX_LEVEL + 1 }, () => 0);
       for (const f of farms) levels[f.level] = (levels[f.level] || 0) + 1;
@@ -78,6 +79,7 @@ export function adminRoutes({ store, ok, bad, loadFarm, onEconomyChange }) {
           active7d: farms.filter(f => now - f.lastActive < 7 * DAY_MS).length,
           newToday: today.new_players || 0,
           broke: farms.filter(f => f.coins < TIER.feeble.cost && !f.planted).length,
+          neverPlayed: all.length - farms.length,
         },
         supply: { coins: sum('coins'), gems: sum('gems'), xp: sum('xp') },
         lifetime: {

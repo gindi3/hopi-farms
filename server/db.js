@@ -77,9 +77,13 @@ export function openDb(file) {
       INSERT INTO farms (user_id, state, name, level, xp, updated_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (user_id) DO UPDATE SET state = excluded.state, name = excluded.name,
         level = excluded.level, xp = excluded.xp, updated_at = excluded.updated_at`),
-    top: db.prepare('SELECT user_id, name, level, xp FROM farms ORDER BY xp DESC, user_id ASC LIMIT ?'),
+    // Leaderboard and its player count skip farms that never played (0 XP).
+    top: db.prepare('SELECT user_id, name, level, xp FROM farms WHERE xp > 0 ORDER BY xp DESC, user_id ASC LIMIT ?'),
     rankOf: db.prepare('SELECT COUNT(*) AS ahead FROM farms WHERE xp > ?'),
-    farmCount: db.prepare('SELECT COUNT(*) AS n FROM farms'),
+    farmCount: db.prepare('SELECT COUNT(*) AS n FROM farms WHERE xp > 0'),
+    // Guest accounts whose farm was never played; deleting the user removes its farm and sessions.
+    pruneGuests: db.prepare(`DELETE FROM users WHERE username IS NULL AND is_admin = 0 AND id IN (
+      SELECT user_id FROM farms WHERE xp = 0 AND updated_at < ?)`),
     getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
     putSetting: db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value'),
     bumpStat: db.prepare(`INSERT INTO daily_stats (day, key, value) VALUES (?, ?, ?)
@@ -126,6 +130,8 @@ export function openDb(file) {
       return q.rankOf.get(xp).ahead + 1;
     },
     farmCount: () => q.farmCount.get().n,
+    // Remove guests that never played and were last touched before `cutoff` (ms). Returns how many.
+    pruneGuests: (cutoff) => Number(q.pruneGuests.run(cutoff).changes),
     getSetting(key) {
       const row = q.getSetting.get(key);
       return row ? JSON.parse(row.value) : null;

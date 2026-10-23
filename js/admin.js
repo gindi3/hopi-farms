@@ -232,7 +232,7 @@ async function renderOverview() {
     <div class="section-head"><div><h2>Overview</h2><div class="muted">Live from the game database. Daily charts start from when stats logging was turned on.</div></div>
       <button class="btn" data-refresh>Refresh</button></div>
     <div class="grid tiles">
-      ${tile('Players', fmt(o.players.total, 0), `${fmt(o.players.registered, 0)} with accounts · ${fmt(o.players.total - o.players.registered, 0)} guests`)}
+      ${tile('Players', fmt(o.players.total, 0), `${fmt(o.players.registered, 0)} with accounts · ${fmt(o.players.total - o.players.registered, 0)} guests · ${fmt(o.players.neverPlayed, 0)} visitors never played`)}
       ${tile('Active today', fmt(o.players.active24h, 0), `${fmt(o.players.active7d, 0)} in the last 7 days`)}
       ${tile('New today', fmt(o.players.newToday, 0), `${fmt(o.today.registrations || 0, 0)} saved an account`)}
       ${tile('Coins held', fmt(o.supply.coins, 0), `${fmt(o.supply.gems, 0)} gems held`)}

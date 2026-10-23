@@ -638,3 +638,6 @@ button.item:hover { filter: brightness(1.05); }
 hr.rule { border: 0; border-top: 2px solid #dcc69a; margin: 16px 0; }
 .leaders tr.you td { background: #fbe7a8; }
 .leaders tr.gap td { border-top: 4px dotted #c8ac7a; }
+
+/* Welcome screen farmer. */
+.intro-logo { margin: 4px auto 2px; animation: bob 2.4s steps(2) infinite; }

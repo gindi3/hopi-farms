@@ -22,7 +22,7 @@ import { adminRoutes, actionStats, dayOf } from './admin.js';
 import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY } from '../js/economy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const STATIC_DIRS = new Set(['css', 'js']);
+const STATIC_DIRS = new Set(['css', 'js', 'brand']);
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -62,6 +62,7 @@ export function createServer({
   devSpeed = 1,
   allowedOrigins = [],
   trustProxy = false,
+  rateLimits = true,      // tests turn this off
   log = console,
 } = {}) {
   const store = openDb(dbFile);
@@ -75,7 +76,7 @@ export function createServer({
     applyEconomy(DEFAULT_ECONOMY);
   }
   let econ = economyVersion(snapshotEconomy());
-  const limits = new RateLimiter();
+  const limits = rateLimits ? new RateLimiter() : { hit: () => true };
   const rng = () => randomInt(0, 2 ** 47) / 2 ** 47;
 
   // --- Auth helpers ----------------------------------------------------------
@@ -240,7 +241,7 @@ export function createServer({
       if (pages[url.pathname]) {
         const page = await staticFile(`/${pages[url.pathname]}`);
         page.body = String(page.body)
-          .replace(/(href|src)="((?:css|js)\/[^"]+)"/g, `$1="/v/${build}/$2"`);
+          .replace(/(href|src)="((?:css|js|brand)\/[^"]+)"/g, `$1="/v/${build}/$2"`);
         return send(res, page);
       }
       return send(res, await staticFile(url.pathname));
@@ -250,7 +251,16 @@ export function createServer({
     }
   });
 
-  server.on('close', () => store.close());
+  // Every new browser gets a guest farm; clear out the ones nobody played after a day.
+  const pruneEmptyGuests = () => {
+    const n = store.pruneGuests(Date.now() - 24 * 3600e3);
+    if (n) log.info?.(`Removed ${n} unplayed guest farm${n === 1 ? '' : 's'}.`);
+  };
+  pruneEmptyGuests();
+  const pruneTimer = setInterval(pruneEmptyGuests, 3600e3);
+  pruneTimer.unref();
+
+  server.on('close', () => { clearInterval(pruneTimer); store.close(); });
   server.store = store;   // for tests and the admin CLI-style setup in tests
   return server;
 }
