@@ -5,7 +5,7 @@
 export const SCENE_W = 400;
 export const SCENE_H = 240;
 
-const INK = '#2b1d14';
+const INK = '#3a2214';   // soft dark brown for hard edges (fences, lamps)
 const GRASS = ['#6cae4a', '#62a243', '#78ba52', '#5a9a3e'];
 const TUFT = ['#4e8a36', '#8cc85e'];
 const SOIL = ['#c08654', '#b67c4a', '#ca9260', '#a8703f'];
@@ -60,46 +60,83 @@ function rngFrom(seed) {
   };
 }
 
+// Scenes are laid out in 400×240 scene units but painted at S render pixels per unit, so
+// textures, shading and outlines are finer than the layout grid.
+const S = 2;
+
+function hex(c) {
+  const n = parseInt(c.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function mix(a, b, t) {
+  const A = hex(a), B = hex(b);
+  return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+const shade = (c) => mix(c, '#24140a', 0.55);   // soft outline tint for a colour
+
 function painter(canvas, seed) {
-  canvas.width = SCENE_W;
-  canvas.height = SCENE_H;
+  canvas.width = SCENE_W * S;
+  canvas.height = SCENE_H * S;
   const ctx = canvas.getContext('2d');
   const rnd = rngFrom(seed);
+  const o = 1 / S;               // one render pixel, in scene units
   const P = {
     rnd,
+    o,
     pick: (arr) => arr[Math.floor(rnd() * arr.length)],
-    px(x, y, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), 1, 1); },
-    rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); },
-    // Shaded, outlined ellipse.
-    blob(cx, cy, rx, ry, [base, shadow, hi], outline = INK) {
-      for (let y = Math.floor(cy - ry - 1); y <= Math.ceil(cy + ry + 1); y++) {
-        for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
-          const dx = (x + 0.5 - cx) / rx, dy = (y + 0.5 - cy) / ry;
-          if (dx * dx + dy * dy <= 1) {
-            const s = dx * 0.5 + dy;
-            P.px(x, y, s > 0.45 ? shadow : s < -0.55 ? hi : base);
-          } else if (outline) {
-            const ox = (x + 0.5 - cx) / (rx + 1), oy = (y + 0.5 - cy) / (ry + 1);
-            if (ox * ox + oy * oy <= 1) P.px(x, y, outline);
-          }
+    // One render pixel at render coordinates.
+    dot(X, Y, c) { ctx.fillStyle = c; ctx.fillRect(X, Y, 1, 1); },
+    // One scene unit (S×S render pixels).
+    px(x, y, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x * S), Math.round(y * S), S, S); },
+    rect(x, y, w, h, c) {
+      ctx.fillStyle = c;
+      ctx.fillRect(Math.round(x * S), Math.round(y * S), Math.max(1, Math.round(w * S)), Math.max(1, Math.round(h * S)));
+    },
+    // Fill every render pixel inside a scene-unit rectangle using pick(X, Y) for its colour.
+    texture(x, y, w, h, pickColor) {
+      const X0 = Math.round(x * S), Y0 = Math.round(y * S), X1 = Math.round((x + w) * S), Y1 = Math.round((y + h) * S);
+      for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++) P.dot(X, Y, pickColor(X, Y));
+    },
+    // Shaded ellipse with a one-render-pixel outline tinted from its shadow colour.
+    blob(cx, cy, rx, ry, [base, shadow, hi], outline) {
+      const line = outline === null ? null : (outline || shade(shadow));
+      const mid = mix(base, shadow, 0.5);
+      const X0 = Math.floor((cx - rx - 1) * S), X1 = Math.ceil((cx + rx + 1) * S);
+      const Y0 = Math.floor((cy - ry - 1) * S), Y1 = Math.ceil((cy + ry + 1) * S);
+      for (let Y = Y0; Y <= Y1; Y++) for (let X = X0; X <= X1; X++) {
+        const u = (X + 0.5) / S, v = (Y + 0.5) / S;
+        const dx = (u - cx) / rx, dy = (v - cy) / ry;
+        if (dx * dx + dy * dy <= 1) {
+          const t = dx * 0.5 + dy;
+          P.dot(X, Y, t > 0.6 ? shadow : t > 0.3 ? mid : t < -0.62 ? hi : base);
+        } else if (line) {
+          const ox = (u - cx) / (rx + o), oy = (v - cy) / (ry + o);
+          if (ox * ox + oy * oy <= 1) P.dot(X, Y, line);
         }
       }
     },
-    box(x, y, w, h, [base, shadow, hi], outline = INK) {
-      P.rect(x - 1, y - 1, w + 2, h + 2, outline);
+    box(x, y, w, h, [base, shadow, hi], outline) {
+      P.rect(x - o, y - o, w + 2 * o, h + 2 * o, outline || shade(shadow));
       P.rect(x, y, w, h, base);
-      P.rect(x, y, w, 1, hi);
-      P.rect(x, y + h - 1, w, 1, shadow);
-      P.rect(x + w - 1, y, 1, h, shadow);
+      P.rect(x, y, w, o * 2, hi);
+      P.rect(x, y + h - o * 2, w, o * 2, shadow);
+      P.rect(x + w - o * 2, y, o * 2, h, shadow);
     },
     grass() {
-      for (let y = 0; y < SCENE_H; y++) for (let x = 0; x < SCENE_W; x++) {
-        const r = rnd();
-        P.px(x, y, r < 0.72 ? GRASS[0] : r < 0.86 ? GRASS[1] : r < 0.96 ? GRASS[2] : GRASS[3]);
-      }
-      for (let i = 0; i < 520; i++) {
-        const x = rnd() * SCENE_W, y = rnd() * SCENE_H;
-        P.px(x, y, TUFT[0]); P.px(x - 1, y - 1, TUFT[0]); P.px(x + 1, y - 1, TUFT[0]); P.px(x, y - 1, TUFT[1]);
+      // Low-frequency patches so the lawn isn't uniform noise.
+      const patch = [];
+      for (let j = 0; j <= SCENE_H / 12 + 1; j++) { patch[j] = []; for (let i = 0; i <= SCENE_W / 12 + 1; i++) patch[j][i] = rnd(); }
+      P.texture(0, 0, SCENE_W, SCENE_H, (X, Y) => {
+        const p = patch[Math.floor(Y / S / 12)][Math.floor(X / S / 12)];
+        const r = rnd() * 0.85 + p * 0.15;
+        return r < 0.62 ? GRASS[0] : r < 0.78 ? GRASS[1] : r < 0.93 ? GRASS[2] : GRASS[3];
+      });
+      for (let i = 0; i < 1400; i++) {
+        const X = Math.floor(rnd() * SCENE_W * S), Y = Math.floor(rnd() * SCENE_H * S);
+        const dark = rnd() < 0.6;
+        const a = dark ? TUFT[0] : TUFT[1];
+        P.dot(X, Y, a); P.dot(X - 1, Y - 1, a); P.dot(X + 1, Y - 1, a); P.dot(X, Y - 2, a);
+        if (!dark) P.dot(X, Y - 1, '#a8dc78');
       }
     },
     cobbles(x0, y0, w, h, density) {
@@ -144,8 +181,10 @@ function painter(canvas, seed) {
       for (let i = 0; i < n; i++) {
         const x = rnd() * SCENE_W, y = rnd() * SCENE_H;
         if (avoid(x, y)) continue;
-        const col = P.pick(['#ffffff', '#fff2b0', '#f58aa8', '#ffffff']);
-        P.px(x, y, col); P.px(x - 1, y, col); P.px(x + 1, y, col); P.px(x, y - 1, col); P.px(x, y, '#f2c94c');
+        const col = P.pick(['#ffffff', '#fff2b0', '#f58aa8', '#ffffff', '#c8d8ff']);
+        const X = Math.round(x * S), Y = Math.round(y * S);
+        for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, 0], [1, 0], [0, -1], [0, 1]]) P.dot(X + dx, Y + dy, col);
+        P.dot(X, Y, '#f2c94c'); P.dot(X + 1, Y + 3, TUFT[0]);
       }
     },
     woodFence(x, y, w, h, gaps = []) {
@@ -176,14 +215,20 @@ function painter(canvas, seed) {
       P.rect(x - 2, y + 1, w + 4, 1, roof[2]);
     },
     stoneWall(x, y, w, h) {
-      P.rect(x - 1, y - 1, w + 2, h + 2, INK);
-      for (let gy = 0; gy < h; gy++) for (let gx = 0; gx < w; gx++) {
-        const mortar = gy % 3 === 2 || (gx + (Math.floor(gy / 3) % 2) * 3) % 6 === 0;
-        P.px(x + gx, y + gy, mortar ? WALL[1] : (rnd() < 0.85 ? WALL[0] : WALL[2]));
-      }
+      P.rect(x - o, y - o, w + 2 * o, h + 2 * o, shade(WALL[1]));
+      const X0 = Math.round(x * S), Y0 = Math.round(y * S);
+      P.texture(x, y, w, h, (X, Y) => {
+        const lx = X - X0, ly = Y - Y0;
+        const row = Math.floor(ly / 6);
+        const mortar = ly % 6 === 5 || (lx + (row % 2) * 6) % 12 === 0;
+        if (mortar) return WALL[1];
+        if (ly % 6 === 0) return WALL[2];            // lit top edge of each brick
+        return rnd() < 0.9 ? WALL[0] : mix(WALL[0], WALL[1], 0.4);
+      });
       if (w > h) {
-        P.rect(x, y, w, 2, '#a85a3a');
-        for (let gx = 0; gx < w; gx += 6) P.rect(x + gx, y - 2, 3, 2, '#a85a3a');
+        P.rect(x, y, w, 2, '#b4643e');
+        P.rect(x, y, w, o, '#d88a5a');
+        for (let gx = 0; gx < w; gx += 6) { P.rect(x + gx, y - 2, 3, 2, '#b4643e'); P.rect(x + gx, y - 2, 3, o, '#d88a5a'); }
       }
     },
     tower(x, y) {
@@ -192,15 +237,16 @@ function painter(canvas, seed) {
       P.rect(x - 1, y - 2, 2, 4, INK);
     },
     path(points, r) {
-      for (let i = 0; i < points.length - 1; i++) {
-        const [x0, y0] = points[i], [x1, y1] = points[i + 1];
-        const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0));
+      for (let i = 0; i < points.length - 1 || (points.length === 1 && i === 0); i++) {
+        const [x0, y0] = points[i], [x1, y1] = points[Math.min(i + 1, points.length - 1)];
+        const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
         for (let k = 0; k <= n; k++) {
-          const cx = x0 + (x1 - x0) * k / n, cy = y0 + (y1 - y0) * k / n;
-          for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
-            if (x * x + y * y > r * r) continue;
+          const cx = (x0 + (x1 - x0) * k / n) * S, cy = (y0 + (y1 - y0) * k / n) * S, R = r * S;
+          for (let Y = Math.floor(cy - R); Y <= cy + R; Y++) for (let X = Math.floor(cx - R); X <= cx + R; X++) {
+            const d = Math.hypot(X + 0.5 - cx, Y + 0.5 - cy);
+            if (d > R) continue;
             const rr = rnd();
-            P.px(cx + x, cy + y, rr < 0.75 ? DIRT[0] : rr < 0.9 ? DIRT[1] : DIRT[2]);
+            P.dot(X, Y, d > R - 1.2 && rr < 0.5 ? DIRT[1] : rr < 0.72 ? DIRT[0] : rr < 0.88 ? DIRT[1] : DIRT[2]);
           }
         }
       }
@@ -220,20 +266,25 @@ export function drawFarm(canvas) {
   P.cobbles(150, 172, 100, 12, 0.5);
 
   for (const f of FIELDS) {
-    for (let y = f.y + 3; y < f.y + f.h - 3; y++) for (let x = f.x + 3; x < f.x + f.w - 3; x++) {
+    P.texture(f.x + 3, f.y + 3, f.w - 6, f.h - 6, () => {
       const r = rnd();
-      px(x, y, r < 0.7 ? SOIL[0] : r < 0.85 ? SOIL[1] : r < 0.96 ? SOIL[2] : SOIL[3]);
-    }
+      return r < 0.7 ? SOIL[0] : r < 0.85 ? SOIL[1] : r < 0.96 ? SOIL[2] : SOIL[3];
+    });
     rect(f.x + 3, f.y + 3, f.w - 6, 2, SOIL[3]);
     const iw = f.w - 16;
     for (let c = 0; c < COLS; c++) {
-      const cx = f.x + 8 + (c + 0.5) * iw / COLS;
-      for (let y = f.y + 12; y < f.y + f.h - 10; y++) {
-        const half = (y < f.y + 16 || y > f.y + f.h - 14) ? 6 : 8;
-        for (let x = Math.round(cx - half); x < Math.round(cx + half); x++) {
-          px(x, y, rnd() < 0.8 ? FURROW[0] : pick(FURROW));
+      const cx = (f.x + 8 + (c + 0.5) * iw / COLS) * S;
+      const top = (f.y + 12) * S, bottom = (f.y + f.h - 10) * S;
+      for (let Y = top; Y < bottom; Y++) {
+        // Rounded ends: narrower near the top and bottom of each furrow.
+        const edge = Math.min(Y - top, bottom - 1 - Y);
+        const half = 16 - Math.max(0, 6 - edge) * 0.9;
+        for (let X = Math.round(cx - half); X < Math.round(cx + half); X++) {
+          const r = rnd();
+          P.dot(X, Y, X < cx - half + 2 ? FURROW[1] : r < 0.8 ? FURROW[0] : pick(FURROW));
         }
-        px(cx - half - 1, y, SOIL[2]);
+        P.dot(Math.round(cx - half) - 1, Y, SOIL[2]);   // lit ridge on the left
+        P.dot(Math.round(cx + half), Y, SOIL[3]);       // shadowed ridge on the right
       }
     }
     farmFence(P, f);
@@ -310,10 +361,13 @@ export function drawValley(canvas) {
   for (let a = 0; a < Math.PI * 2; a += 0.02) P.path([[200 + Math.cos(a) * 20, 132 + Math.sin(a) * 16]], 3);
 
   // Market floor: stone tiles.
-  for (let y = 156; y < 224; y++) for (let x = 18; x < 148; x++) {
-    const mortar = y % 6 === 0 || (x + (Math.floor(y / 6) % 2) * 5) % 10 === 0;
-    px(x, y, mortar ? '#8a867e' : (rnd() < 0.9 ? '#aaa69c' : '#bcb8ae'));
-  }
+  P.texture(18, 156, 130, 68, (X, Y) => {
+    const row = Math.floor(Y / 12);
+    const mortar = Y % 12 === 0 || (X + (row % 2) * 10) % 20 === 0;
+    if (mortar) return '#86827a';
+    if (Y % 12 === 1) return '#c6c2b8';                // lit top edge of each tile
+    return rnd() < 0.9 ? '#aaa69c' : '#b8b4aa';
+  });
 
   // Fountain on the plaza.
   P.box(190, 124, 20, 16, STONE);

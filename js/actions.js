@@ -3,7 +3,9 @@
 // ctx: { now, rng, speed }.
 
 import * as G from './game.js';
-import { CROP } from './data.js';
+import { CROP, TIER } from './data.js';
+
+export const MAX_BATCH = 9;
 
 export const NAME_MAX = 18;
 
@@ -20,13 +22,24 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
     case 'buyPack':
       return G.buyPack(state, tierOf(action));
 
-    case 'openPack':
-      return G.openPack(state, tierOf(action), rng);
+    // Open 1–9 owned packs of a tier. Returns { results: [{ cropId, rarity }, ...] }.
+    case 'openPack': {
+      const tier = tierOf(action), count = countOf(action);
+      if ((state.packs[tier] || 0) < count) throw new G.GameError(`You only have ${state.packs[tier] || 0} of those packs.`);
+      return { results: Array.from({ length: count }, () => G.openPack(state, tier, rng)) };
+    }
 
+    // Buy and open 1–9 packs at once. Checks the full price first, so a batch is all or nothing.
     case 'buyOpen': {
-      const tier = tierOf(action);
-      G.buyPack(state, tier);
-      return G.openPack(state, tier, rng);
+      const tier = tierOf(action), count = countOf(action);
+      const total = TIER[tier].cost * count;
+      if (state.coins < total) throw new G.GameError(`You need ${total} coins for ${count} ${TIER[tier].label} pack${count === 1 ? '' : 's'}.`);
+      const results = [];
+      for (let i = 0; i < count; i++) {
+        G.buyPack(state, tier);
+        results.push(G.openPack(state, tier, rng));
+      }
+      return { results };
     }
 
     case 'plant':
@@ -114,6 +127,12 @@ export function seedsBestFirst(state) {
   return Object.keys(state.seeds).sort((a, b) =>
     TIER_ORDER.indexOf(CROP[b].tier) - TIER_ORDER.indexOf(CROP[a].tier) ||
     RARITY_ORDER.indexOf(CROP[b].rarity) - RARITY_ORDER.indexOf(CROP[a].rarity));
+}
+
+function countOf(action) {
+  const n = action.count === undefined ? 1 : Number(action.count);
+  if (!Number.isInteger(n) || n < 1 || n > MAX_BATCH) throw new G.GameError(`You can buy 1 to ${MAX_BATCH} packs at a time.`);
+  return n;
 }
 
 function tierOf(action) {

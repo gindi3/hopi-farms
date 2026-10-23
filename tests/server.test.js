@@ -37,10 +37,11 @@ test('actions change the saved farm; the server keeps the result', async () => {
   const r = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'pico' } });
   assert.equal(r.status, 200);
   assert.equal(r.data.state.coins, 80);
-  assert.ok(r.data.result.cropId);
+  const cropId = r.data.result.results[0].cropId;
+  assert.ok(cropId);
   const me = await call('GET', '/api/me', { token: g.token });
   assert.equal(me.data.state.coins, 80);
-  assert.equal(me.data.state.seeds[r.data.result.cropId], 1);
+  assert.equal(me.data.state.seeds[cropId], 1);
 });
 
 test('plant, then harvest using the server clock', async () => {
@@ -63,11 +64,29 @@ test('the client cannot set its own coins', async () => {
   assert.equal(r2.data.state.coins, 100);
 });
 
+test('buy up to 9 packs at once, all or nothing', async () => {
+  const g = await guest();
+  const three = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'pico', count: 3 } });
+  assert.equal(three.status, 200);
+  assert.equal(three.data.result.results.length, 3);
+  assert.equal(three.data.state.coins, 40);
+  const tooMany = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'feeble', count: 10 } });
+  assert.equal(tooMany.status, 400);
+  const cantAfford = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'pico', count: 3 } });
+  assert.equal(cantAfford.status, 400);
+  assert.equal(cantAfford.data.error, 'You need 60 coins for 3 Pico packs.');
+  const me = await call('GET', '/api/me', { token: g.token });
+  assert.equal(me.data.state.coins, 40); // nothing charged for the refused batch
+  const nine = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'feeble', count: 9 } });
+  assert.equal(nine.data.result.results.length, 9);
+  assert.equal(nine.data.state.coins, 31);
+});
+
 test('game rule errors come back as 400 with a message', async () => {
   const g = await guest();
   const r = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'premium' } });
   assert.equal(r.status, 400);
-  assert.match(r.data.error, /Not enough coins/);
+  assert.match(r.data.error, /You need 800 coins/);
   const bad = await call('POST', '/api/action', { token: g.token, body: { type: 'plant', plot: '1.5', cropId: 'f_potato' } });
   assert.equal(bad.status, 400);
 });
@@ -110,9 +129,11 @@ test('leaderboard ranks by XP and marks you', async () => {
   for (let i = 0; i < 5; i++) await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'pico' } });
   const lb = await call('GET', '/api/leaderboard', { token: g.token });
   assert.equal(lb.status, 200);
-  assert.equal(lb.data.top[0].name, 'Leader');
-  assert.equal(lb.data.top[0].you, true);
-  assert.equal(lb.data.you.rank, 1);
+  const mine = lb.data.top.find(r => r.you);
+  assert.equal(mine.name, 'Leader');
+  assert.equal(mine.rank, lb.data.you.rank);
+  const xps = lb.data.top.map(r => r.xp);
+  assert.deepEqual(xps, [...xps].sort((a, b) => b - a));
   assert.ok(!('user_id' in lb.data.top[0]));
 });
 

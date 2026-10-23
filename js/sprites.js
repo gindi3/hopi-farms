@@ -1,57 +1,81 @@
-// Original 16×16 pixel art, drawn in code. Each sprite is built from shaded shape layers,
-// then given a dark outline, and cached as a data URL.
+// Original pixel art, drawn in code. Shapes are described on a 16×16 grid but rendered at
+// 32×32 (R = 2), so curves are smoother and shading and outlines are one fine pixel wide.
+// Outlines take a darkened tint of the colour they border, rather than flat black.
 
 import { CROP } from './data.js';
 
-const W = 16;
-const OUTLINE = '#2b1d14';
+const G16 = 16;             // design grid that shape coordinates use
+const R = 2;                // render pixels per design pixel
+const W = G16 * R;          // rendered sprite size
+const OUTLINE_DARK = '#2a170d';
 const LEAF = ['#6cbf4a', '#3e8a2e', '#a6e07a'];
 const SOIL = ['#8a5a32', '#5e3a1e', '#b07a4a'];
 const BROWN = '#6b4a22';
 
+// --- Colour helpers ------------------------------------------------------------
+
+function hex(c) {
+  const n = parseInt(c.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function mix(a, b, t) {
+  const A = hex(a), B = hex(b);
+  return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+export const darken = (c, t) => mix(c, OUTLINE_DARK, t);
+
 class Px {
   constructor() { this.c = new Array(W * W).fill(null); }
   in(x, y) { return x >= 0 && y >= 0 && x < W && y < W; }
-  get(x, y) { return this.in(x, y) ? this.c[y * W + x] : null; }
-  set(x, y, col) { if (this.in(x, y)) this.c[y * W + x] = col; }
+  // set/line take design-grid coordinates and paint R×R blocks.
+  set(x, y, col) {
+    for (let dy = 0; dy < R; dy++) for (let dx = 0; dx < R; dx++) {
+      const X = x * R + dx, Y = y * R + dy;
+      if (this.in(X, Y)) this.c[Y * W + X] = col;
+    }
+  }
   line(x0, y0, x1, y1, col) {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) || 1;
     for (let i = 0; i <= n; i++) {
       this.set(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), col);
     }
   }
-  // Fill every pixel whose centre passes `test`, shading top edges light and bottom/right dark.
+  // Fill every render pixel whose centre passes `test` (in design coordinates). Shading:
+  // a light rim on the top/left, a two-step shadow on the bottom/right.
   layer(test, [base, shadow, hi]) {
     const m = new Set();
     for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
-      if (test(x + 0.5, y + 0.5)) m.add(y * W + x);
+      if (test((x + 0.5) / R, (y + 0.5) / R)) m.add(y * W + x);
     }
     const has = (x, y) => this.in(x, y) && m.has(y * W + x);
+    const mid = mix(base, shadow, 0.5);
     for (const k of m) {
       const x = k % W, y = (k - x) / W;
       let col = base;
       if (!has(x, y + 1) || !has(x + 1, y)) col = shadow;
+      else if (!has(x, y + 2) || !has(x + 2, y)) col = mid;
       else if (!has(x, y - 1) || !has(x - 1, y)) col = hi;
       this.c[k] = col;
     }
     return m;
   }
-  // Paint `col` over pixels of an existing mask that also pass `test`.
+  // Paint `col` over pixels of an existing mask whose design-grid cell passes `test`.
   within(mask, test, col) {
     for (const k of mask) {
       const x = k % W, y = (k - x) / W;
-      if (test(x, y)) this.c[k] = col;
+      if (test(Math.floor(x / R), Math.floor(y / R))) this.c[k] = col;
     }
   }
-  outline(col = OUTLINE) {
+  // One-pixel outline tinted from the neighbouring colour.
+  outline() {
     const src = this.c.slice();
     for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
       if (src[y * W + x]) continue;
-      const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+      for (const [dx, dy] of [[0, -1], [-1, 0], [1, 0], [0, 1]]) {
         const xx = x + dx, yy = y + dy;
-        return this.in(xx, yy) && src[yy * W + xx];
-      });
-      if (n) this.c[y * W + x] = col;
+        const nb = this.in(xx, yy) && src[yy * W + xx];
+        if (nb) { this.c[y * W + x] = darken(nb, 0.72); break; }
+      }
     }
     return this;
   }
@@ -280,7 +304,7 @@ const ICONS = {
     p.layer(box(6, 10, 10, 13), ['#4a6ad8', '#2a3e96', '#7a9af0']);
     p.set(6, 8, '#4a6ad8'); p.set(10, 8, '#4a6ad8');
     p.layer(box(6, 4, 10, 7), ['#f0c090', '#c08a5a', '#ffe0b8']);
-    p.set(7, 5, OUTLINE); p.set(9, 5, OUTLINE); p.set(8, 7, '#c08a5a');
+    p.set(7, 5, '#3a2416'); p.set(9, 5, '#3a2416'); p.set(8, 7, '#c08a5a');
     p.layer(any(ell(8, 3.6, 6.4, 1.5), box(5, 1, 10, 3)), ['#e8c25a', '#b08a30', '#f7e2a0']);
     p.line(5, 3, 10, 3, '#c85a3a');
   },
@@ -341,37 +365,38 @@ export function spriteUrl(key) {
   return url;
 }
 
-// 12×12 nine-slice images for pixel UI panels and buttons (slice 4px). `rings` are the colours
+// 14×14 nine-slice images for pixel UI panels and buttons (slice 5px). `rings` are the colours
 // from the outside in; `shade` replaces the inner rings along the bottom edge for a 3D lip.
+const EDGE = '#4a2a17';     // soft dark-brown outline, like the sprites'
 const UI = {
-  panel:  { rings: [OUTLINE, '#e0a868', '#b07848', '#6b4424'], fill: '#f3e2c0' },
-  slot:   { rings: [OUTLINE, '#c8ac7a', '#e8d4ac', '#e8d4ac'], fill: '#f7ead0' },
-  wood:   { rings: [OUTLINE, '#e0a868', '#b07848', '#b07848'], fill: '#b07848', shade: '#7a4e2c' },
-  blue:   { rings: [OUTLINE, '#a4b4f0', '#6a7ac0', '#6a7ac0'], fill: '#6a7ac0', shade: '#46528a' },
-  orange: { rings: [OUTLINE, '#ffd08a', '#f0963a', '#f0963a'], fill: '#f0963a', shade: '#b8621c' },
-  cream:  { rings: [OUTLINE, '#fff6e0', '#f3e2c0', '#f3e2c0'], fill: '#f3e2c0', shade: '#c8ac7a' },
-  gem:    { rings: [OUTLINE, '#c8f7ff', '#6ad0e4', '#6ad0e4'], fill: '#6ad0e4', shade: '#2a8aa8' },
-  pill:   { rings: [OUTLINE, '#a4b4f0', '#5a6aa8', '#3a467a'], fill: '#f3e2c0' },
-  sign:   { rings: [OUTLINE, '#f3c890', '#c88a52', '#7a4e2c'], fill: '#c88a52' },
+  panel:  { rings: [EDGE, '#f0bc7c', '#c88a52', '#a06a3a', '#6b4424'], fill: '#f4e3c1' },
+  slot:   { rings: [EDGE, '#c8ac7a', '#e8d4ac', '#efdcb6', '#efdcb6'], fill: '#f8ecd2' },
+  wood:   { rings: [EDGE, '#f0bc7c', '#c88a52', '#c88a52', '#c88a52'], fill: '#c88a52', shade: '#8a5530' },
+  blue:   { rings: [EDGE, '#b8c6f5', '#7484cc', '#7484cc', '#7484cc'], fill: '#7484cc', shade: '#4a5694' },
+  orange: { rings: [EDGE, '#ffd894', '#f5a040', '#f5a040', '#f5a040'], fill: '#f5a040', shade: '#c06a1e' },
+  cream:  { rings: [EDGE, '#fffaea', '#f4e3c1', '#f4e3c1', '#f4e3c1'], fill: '#f4e3c1', shade: '#cdb07c' },
+  gem:    { rings: [EDGE, '#d2f8ff', '#72d4e6', '#72d4e6', '#72d4e6'], fill: '#72d4e6', shade: '#2e8eac' },
+  pill:   { rings: [EDGE, '#b8c6f5', '#6676b8', '#4a5694', '#3a447a'], fill: '#f4e3c1' },
+  sign:   { rings: [EDGE, '#f5cf98', '#cc9058', '#cc9058', '#8a5530'], fill: '#cc9058' },
 };
 
 export function uiSlice(kind) {
   const key = `ui:${kind}`;
   if (cache.has(key)) return cache.get(key);
   const { rings, fill, shade } = UI[kind];
-  const n = 12;
+  const n = 14, depth = rings.length;
   const cv = document.createElement('canvas');
   cv.width = n; cv.height = n;
   const ctx = cv.getContext('2d');
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
     const ex = Math.min(x, n - 1 - x), ey = Math.min(y, n - 1 - y);
-    if (ex === 0 && ey === 0) continue;              // cut the outer corner pixel
+    if (ex + ey <= 1) continue;                      // cut three corner pixels
     let col;
-    if (ex + ey === 1) col = rings[0];               // rounded outline corner
+    if (ex + ey === 2) col = rings[0];               // outline the rounded corner
     else {
       const d = Math.min(ex, ey);
-      col = d < 4 ? rings[d] : fill;
-      if (shade && d >= 1 && d < 4 && n - 1 - y === d && ex >= d) col = shade;
+      col = d < depth ? rings[d] : fill;
+      if (shade && d >= 2 && d < depth && n - 1 - y === d && ex >= d) col = shade;
     }
     ctx.fillStyle = col;
     ctx.fillRect(x, y, 1, 1);
@@ -381,6 +406,8 @@ export function uiSlice(kind) {
   return url;
 }
 
+// Sprites are 32×32; below that they're scaled down smoothly instead of dropping pixels.
 export function spriteImg(key, size = 32, cls = '', alt = '') {
-  return `<img class="px ${cls}" src="${spriteUrl(key)}" width="${size}" height="${size}" alt="${alt}" draggable="false">`;
+  const smooth = size < W ? ' smooth' : '';
+  return `<img class="px${smooth} ${cls}" src="${spriteUrl(key)}" width="${size}" height="${size}" alt="${alt}" draggable="false">`;
 }
