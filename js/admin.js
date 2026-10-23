@@ -235,16 +235,16 @@ async function renderOverview() {
       ${tile('Players', fmt(o.players.total, 0), `${fmt(o.players.registered, 0)} with accounts · ${fmt(o.players.total - o.players.registered, 0)} guests · ${fmt(o.players.neverPlayed, 0)} visitors never played`)}
       ${tile('Active today', fmt(o.players.active24h, 0), `${fmt(o.players.active7d, 0)} in the last 7 days`)}
       ${tile('New today', fmt(o.players.newToday, 0), `${fmt(o.today.registrations || 0, 0)} saved an account`)}
-      ${tile('Coins held', fmt(o.supply.coins, 0), `${fmt(o.supply.gems, 0)} gems held`)}
+      ${tile('$CROP held', fmt(o.supply.coins, 0), `${fmt(o.supply.gems, 0)} gems held`)}
       ${tile('Pack RTP (actual)', realizedRtp === null ? '—' : pct(realizedRtp), `target ${pct(o.theory.baseRtp)} at level 0 · ${fmt(totalPulls, 0)} pulls`, edgeCls)}
-      ${tile('Out of coins', fmt(o.players.broke, 0), 'can\'t afford a Feeble pack and nothing planted', o.players.broke ? 'warn' : '')}
+      ${tile('Out of $CROP', fmt(o.players.broke, 0), 'can\'t afford a Feeble pack and nothing planted', o.players.broke ? 'warn' : '')}
     </div>
     <div class="grid two">
       <div class="card"><h3>Packs opened per day</h3>
         ${barChart({ rows: days.map(d => ({ label: d.day, short: short(d), values: [TIERS.reduce((a, t) => a + (d[`pulls:${t}`] || 0), 0)] })), series: [{ name: 'Packs', color: 'var(--series-1)' }], xEvery: 5 })}
         ${tableView(['Day', ...TIERS.map(t => TIER[t].label)], days.map(d => [d.day, ...TIERS.map(t => d[`pulls:${t}`] || 0)]))}
       </div>
-      <div class="card"><h3>Coins in and out per day</h3>
+      <div class="card"><h3>$CROP in and out per day</h3>
         ${barChart({ rows: days.map(d => ({ label: d.day, short: short(d), values: [d.coins_in || 0, d.coins_out || 0] })), series: [{ name: 'Paid to players', color: 'var(--series-1)' }, { name: 'Spent by players', color: 'var(--series-2)' }], xEvery: 5 })}
         ${tableView(['Day', 'Paid to players', 'Spent by players', 'Pack spend', 'Harvest payouts'], days.map(d => [d.day, fmt(d.coins_in), fmt(d.coins_out), fmt(d.pack_spend), fmt(d.harvest_coins)]))}
       </div>
@@ -274,14 +274,14 @@ async function renderEconomy() {
       <div class="card tile"><div class="label">Base RTP (level 0)</div><div class="value">${pct(base)}</div><div class="sub">house edge ${pct(1 - base)}</div></div>
       <div class="card tile"><div class="label">Max RTP</div><div class="value">${pct(rtps[MAX_LEVEL])}</div><div class="sub">${capLevel >= 0 ? `cap reached at level ${capLevel}` : 'cap not reached'}</div></div>
       <div class="card tile"><div class="label">Average grow time</div><div class="value">${avgHours.toFixed(1)}h</div><div class="sub">per seed, weighted by odds</div></div>
-      <div class="card tile"><div class="label">Cost to max level</div><div class="value">${fmt(cfg.levelCosts.reduce((a, b) => a + b, 0), 0)}</div><div class="sub">coins for all ${MAX_LEVEL} levels</div></div>
+      <div class="card tile"><div class="label">Cost to max level</div><div class="value">${fmt(cfg.levelCosts.reduce((a, b) => a + b, 0), 0)}</div><div class="sub">$CROP for all ${MAX_LEVEL} levels</div></div>
     </div>
     <div class="grid two">
       <div class="card"><h3>Expected return by valley level</h3>
         ${lineChart({ values: rtps, yMin: lo, yMax: hi, yFmt: (v, exact) => pct(v, exact ? 2 : 1), xLabel: 'Level', refValue: 1, refName: 'Break-even', name: 'RTP', color: 'var(--series-1)' })}
         ${tableView(['Level', 'RTP'], rtps.map((r, l) => [l, pct(r)]))}
       </div>
-      <div class="card"><h3>Expected coins back per pack</h3>
+      <div class="card"><h3>Expected $CROP back per pack</h3>
         <div class="table-wrap"><table>
           <thead><tr><th>Pack</th><th class="num">Price</th><th class="num">Back at Lv 0</th><th class="num">Back at Lv ${MAX_LEVEL}</th><th class="num">Edge per pack</th></tr></thead>
           <tbody>${TIERS.map(t => {
@@ -297,8 +297,8 @@ async function renderEconomy() {
       </div>
       <div class="card"><h3>Actual results so far</h3>
         <dl class="kv">
-          <dt>Spent on packs</dt><dd>${fmt(o.realized.packSpend)} coins</dd>
-          <dt>Paid out by harvests</dt><dd>${fmt(o.realized.harvestCoins)} coins</dd>
+          <dt>Spent on packs</dt><dd>${fmt(o.realized.packSpend)} $CROP</dd>
+          <dt>Paid out by harvests</dt><dd>${fmt(o.realized.harvestCoins)} $CROP</dd>
           <dt>Actual pack RTP</dt><dd>${o.realized.packSpend ? pct(o.realized.harvestCoins / o.realized.packSpend) : '—'}</dd>
           <dt>Lifetime spent (all)</dt><dd>${fmt(o.lifetime.coinsSpent)} coins (packs and levels)</dd>
           <dt>Lifetime earned</dt><dd>${fmt(o.lifetime.coinsEarned)} coins</dd>
@@ -331,7 +331,7 @@ async function renderPricing() {
       </div></div>
     <div class="pricing">
       <div class="grid">
-        <div class="card"><h3>Seed pack prices (coins)</h3>
+        <div class="card"><h3>Seed pack prices ($CROP)</h3>
           <div class="form-grid">${TIERS.map(t => `<div class="field"><label>${TIER[t].label}</label>${inp(`packCost.${t}`, draft.packCost[t], { min: 0.01 })}</div>`).join('')}</div>
         </div>
         <div class="card"><h3>Drop odds, payouts and grow times</h3>
@@ -350,7 +350,7 @@ async function renderPricing() {
           <div class="form-grid">
             <div class="field"><label>Harvest bonus per level (%)</label>${inp('harvestBonusPerLevel', draft.harvestBonusPerLevel, { pctScale: true, max: 10 })}</div>
             <div class="field"><label>RTP cap (%)</label>${inp('rtpCap', draft.rtpCap, { pctScale: true, max: 200 })}</div>
-            <div class="field"><label>Starter coins</label>${inp('starterCoins', draft.starterCoins)}</div>
+            <div class="field"><label>Starter $CROP</label>${inp('starterCoins', draft.starterCoins)}</div>
           </div>
           <p class="note" style="margin-top:10px">Base RTP isn't set directly: it's the expected payout of the odds above (sum of chance × payout).</p>
         </div>
@@ -366,7 +366,7 @@ async function renderPricing() {
           <h3 style="margin-top:14px">Daily chest gems (min – max)</h3>
           <div class="form-grid">${CHESTS.map(c => `<div class="field"><label>${c.label} (Lv ${c.minLevel}+)</label><div class="row" style="flex-wrap:nowrap">${inp(`chestGems.${c.id}.0`, draft.chestGems[c.id][0], { step: 1, w: '64px' })}–${inp(`chestGems.${c.id}.1`, draft.chestGems[c.id][1], { step: 1, w: '64px' })}</div></div>`).join('')}</div>
         </div>
-        <div class="card"><h3>Valley level costs (coins to reach each level)</h3>
+        <div class="card"><h3>Valley level costs ($CROP to reach each level)</h3>
           <div class="levels-grid">${draft.levelCosts.map((c, i) => `<div class="field"><label>Level ${i + 1}</label>${inp(`levelCosts.${i}`, c)}</div>`).join('')}</div>
         </div>
       </div>
@@ -470,12 +470,12 @@ async function renderPlayers() {
     <div class="section-head"><div><h2>Players</h2><div class="muted">${fmt(data.total, 0)} farm${data.total === 1 ? '' : 's'}${q ? ` matching “${esc(q)}”` : ''}</div></div>
       <form class="row" id="player-search">
         <input type="search" name="q" placeholder="Search name, username or id" value="${esc(q)}" style="width:240px">
-        <select name="sort">${[['recent', 'Last active'], ['xp', 'Most XP'], ['coins', 'Most coins'], ['gems', 'Most gems'], ['level', 'Highest level'], ['newest', 'Newest']].map(([v, l]) => `<option value="${v}" ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <select name="sort">${[['recent', 'Last active'], ['xp', 'Most XP'], ['coins', 'Most $CROP'], ['gems', 'Most gems'], ['level', 'Highest level'], ['newest', 'Newest']].map(([v, l]) => `<option value="${v}" ${v === sort ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <button class="btn" type="submit">Search</button>
       </form></div>
     <div class="split">
       <div class="card" style="padding:0"><div class="table-wrap"><table>
-        <thead><tr><th>Farm</th><th>Account</th><th class="num">Lv</th><th class="num">XP</th><th class="num">Coins</th><th class="num">Gems</th><th class="num">Packs</th><th class="num">Harvests</th><th>Last active</th></tr></thead>
+        <thead><tr><th>Farm</th><th>Account</th><th class="num">Lv</th><th class="num">XP</th><th class="num">$CROP</th><th class="num">Gems</th><th class="num">Packs</th><th class="num">Harvests</th><th>Last active</th></tr></thead>
         <tbody>${data.rows.map(r => `<tr class="click ${r.id === selectedPlayer ? 'sel' : ''}" data-player="${r.id}">
           <td>${esc(r.name)}</td><td>${r.username ? esc(r.username) : '<span class="muted">guest</span>'} ${r.admin ? '<span class="pill admin">admin</span>' : ''}</td>
           <td class="num">${r.level}</td><td class="num">${fmt(r.xp, 0)}</td><td class="num">${fmt(r.coins)}</td><td class="num">${fmt(r.gems, 0)}</td>
@@ -519,7 +519,7 @@ async function renderPlayerDetail(id) {
     <form id="adjust" class="grid" style="gap:10px">
       <h3>Adjust</h3>
       <div class="form-grid">
-        <div class="field"><label>Coins (+/−)</label><input type="number" name="coins" step="any" value="0"></div>
+        <div class="field"><label>$CROP (+/−)</label><input type="number" name="coins" step="any" value="0"></div>
         <div class="field"><label>Gems (+/−)</label><input type="number" name="gems" step="1" value="0"></div>
       </div>
       <div class="field"><label>Rename farm (optional)</label><input type="text" name="name" maxlength="18" placeholder="${esc(p.name)}"></div>
@@ -531,7 +531,7 @@ async function renderPlayerDetail(id) {
     const f = Object.fromEntries(new FormData(e.target));
     const body = { id: p.id, coins: Number(f.coins || 0), gems: Number(f.gems || 0), name: f.name.trim(), reason: f.reason };
     if (!body.coins && !body.gems && !body.name) return toast('Nothing to change.', true);
-    if (!confirm(`Apply to ${p.name}: ${body.coins ? `${body.coins > 0 ? '+' : ''}${body.coins} coins ` : ''}${body.gems ? `${body.gems > 0 ? '+' : ''}${body.gems} gems ` : ''}${body.name ? `rename to "${body.name}"` : ''}?`)) return;
+    if (!confirm(`Apply to ${p.name}: ${body.coins ? `${body.coins > 0 ? '+' : ''}${body.coins} $CROP ` : ''}${body.gems ? `${body.gems > 0 ? '+' : ''}${body.gems} gems ` : ''}${body.name ? `rename to "${body.name}"` : ''}?`)) return;
     try {
       await api('POST', '/admin/player/adjust', body);
       toast('Player updated.');
@@ -549,7 +549,7 @@ async function renderDeposits() {
   const solscan = (sig) => `https://solscan.io/tx/${encodeURIComponent(sig)}`;
   const statusPill = { credited: '<span class="pill good">credited</span>', unmatched: '<span class="pill warn">needs a player</span>' };
   view.innerHTML = `
-    <div class="section-head"><div><h2>$CROP deposits</h2><div class="muted">One way only: $CROP sent to the treasury becomes coins. Nothing is ever withdrawn, and the server holds no wallet keys.</div></div>
+    <div class="section-head"><div><h2>$CROP deposits</h2><div class="muted">One way only: $CROP sent to the treasury is added 1:1 to the player's in-game $CROP. Nothing is ever withdrawn, and the server holds no wallet keys.</div></div>
       <button class="btn" data-dep="scan" ${d.enabled ? '' : 'disabled'}>Check the chain now</button></div>
     ${d.enabled ? '' : `<div class="card" style="margin-bottom:14px"><h3>Deposits are off</h3>
       <p>Set these on the server, then restart the game:</p>
@@ -558,19 +558,11 @@ HOPI_TREASURY=&lt;the wallet that receives deposits&gt;
 HOPI_SOLANA_RPC=&lt;optional: your RPC URL, e.g. Helius&gt;</pre></div>`}
     <div class="grid tiles">
       <div class="card tile"><div class="label">$CROP received</div><div class="value">${fmt(t('credited').amount + t('unmatched').amount)}</div><div class="sub">${fmt(t('credited').n + t('unmatched').n, 0)} transfers</div></div>
-      <div class="card tile"><div class="label">Coins credited</div><div class="value">${fmt(t('credited').coins)}</div><div class="sub">from ${fmt(t('credited').n, 0)} deposits</div></div>
+      <div class="card tile"><div class="label">Credited to players</div><div class="value">${fmt(t('credited').coins)}</div><div class="sub">$CROP from ${fmt(t('credited').n, 0)} deposits</div></div>
       <div class="card tile"><div class="label">Waiting for a player</div><div class="value ${t('unmatched').n ? 'warn' : ''}">${fmt(t('unmatched').n, 0)}</div><div class="sub">${fmt(t('unmatched').amount)} $CROP from unlinked wallets</div></div>
       <div class="card tile"><div class="label">Watcher</div><div class="value" style="font-size:18px">${d.enabled ? (d.status.lastError ? '<span class="bad">Error</span>' : '<span class="good">Running</span>') : 'Off'}</div><div class="sub">${d.status.lastScan ? `last checked ${ago(d.status.lastScan)}` : 'not checked yet'}${d.status.lastError ? ` · ${esc(d.status.lastError)}` : ''}</div></div>
     </div>
-    <div class="grid two">
-      <div class="card"><h3>Exchange rate</h3>
-        <form class="row" id="dep-rate">
-          <label class="lab" for="rate">Coins per 1 $CROP</label>
-          <input id="rate" name="coinsPerCrop" type="number" step="any" min="0" value="${d.coinsPerCrop}" style="width:140px">
-          <button class="btn primary" type="submit">Save</button>
-        </form>
-        <p class="note" style="margin-top:10px">Applies to deposits found after you save. Packs cost ${TIERS.map(tt => `${TIER[tt].label} ${fmt(TIER[tt].cost)}`).join(', ')} coins, so at this rate a Pico pack is ${fmt(TIER.pico.cost / d.coinsPerCrop)} $CROP.</p>
-      </div>
+    <div class="grid">
       <div class="card"><h3>Addresses</h3>
         <dl class="kv">
           <dt>Token mint</dt><dd class="mono">${d.mint ? esc(d.mint) : '<span class="muted">not set</span>'}</dd>
@@ -580,31 +572,24 @@ HOPI_SOLANA_RPC=&lt;optional: your RPC URL, e.g. Helius&gt;</pre></div>`}
       </div>
     </div>
     <div class="card" style="padding:0;margin-top:14px"><div class="table-wrap"><table>
-      <thead><tr><th>When</th><th>From wallet</th><th class="num">$CROP</th><th class="num">Coins</th><th>Player</th><th>Status</th><th>Transaction</th></tr></thead>
+      <thead><tr><th>When</th><th>From wallet</th><th class="num">$CROP</th><th>Player</th><th>Status</th><th>Transaction</th></tr></thead>
       <tbody>${d.recent.map(r => `<tr>
         <td>${new Date(r.time || r.noted_at).toLocaleString()}</td>
         <td class="mono" title="${esc(r.wallet || '')}">${esc(short(r.wallet))}</td>
-        <td class="num">${fmt(r.amount)}</td><td class="num">${fmt(r.coins)}</td>
+        <td class="num">${fmt(r.amount)}</td>
         <td>${r.username ? esc(r.username) : r.status === 'unmatched'
           ? `<form class="row" data-assign="${esc(r.signature)}" style="flex-wrap:nowrap"><input name="username" placeholder="username" style="width:120px" required><button class="btn" type="submit">Credit</button></form>`
           : '—'}</td>
         <td>${statusPill[r.status] || esc(r.status)}</td>
         <td><a class="mono" href="${solscan(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No deposits yet.</td></tr>'}</tbody>
     </table></div></div>`;
-  $('#dep-rate').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const rate = Number(new FormData(e.target).get('coinsPerCrop'));
-    if (!confirm(`Set the rate to ${rate} coins per $CROP? It applies to every deposit found from now on.`)) return;
-    try { await api('POST', '/admin/deposits/rate', { coinsPerCrop: rate }); toast('Rate saved.'); run(renderDeposits); }
-    catch (err) { if (err instanceof ApiError) toast(err.message, true); else throw err; }
-  });
   view.querySelectorAll('form[data-assign]').forEach(f => f.addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = new FormData(f).get('username').trim();
     if (!confirm(`Credit this deposit to ${username}? This can't be undone from the dashboard.`)) return;
     try {
       const r = await api('POST', '/admin/deposits/assign', { signature: f.dataset.assign, username });
-      toast(`Credited ${fmt(r.coins)} coins to ${username}.`);
+      toast(`Credited ${fmt(r.coins)} $CROP to ${username}.`);
       run(renderDeposits);
     } catch (err) { if (err instanceof ApiError) toast(err.message, true); else throw err; }
   }));

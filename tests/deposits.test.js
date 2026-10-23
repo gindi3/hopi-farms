@@ -152,19 +152,14 @@ test('unknown senders wait for an admin, who can assign them', async () => {
   assert.equal(again.status, 400);                          // can't assign twice
 });
 
-test('the admin rate applies to later deposits', async () => {
-  const adminTok = await player('ratesetter');
-  server.store.setAdmin('ratesetter', true);
-  assert.equal((await call('POST', '/api/admin/deposits/rate', { token: adminTok, body: { coinsPerCrop: 0.5 } })).status, 200);
-  const token = await player('halfrate');
+test('deposits are credited 1:1 as in-game $CROP, including fractions', async () => {
+  const token = await player('onetoone');
   const w = wallet();
   await link(token, w);
   const start = await coins(token);
-  transfer(w.address, 10);
+  transfer(w.address, 12.5);
   await server.deposits.scan();
-  assert.equal(await coins(token), start + 5);
-  assert.equal((await call('GET', '/api/wallet', { token })).data.coinsPerCrop, 0.5);
-  await call('POST', '/api/admin/deposits/rate', { token: adminTok, body: { coinsPerCrop: 1 } });
+  assert.equal(await coins(token), start + 12.5);
 });
 
 test('a scan pages back through many new transfers', async () => {

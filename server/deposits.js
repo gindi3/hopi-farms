@@ -1,6 +1,6 @@
 // One-way $CROP deposits: a player links their Solana wallet by signing a message, then any
-// $CROP they send from it to the treasury becomes coins. Nothing is ever sent out, so the
-// server holds no private keys.
+// $CROP they send from it to the treasury is added 1:1 to their in-game $CROP balance.
+// Nothing is ever sent out, so the server holds no private keys.
 //
 // Env: HOPI_CROP_MINT (token mint), HOPI_TREASURY (wallet that receives deposits),
 //      HOPI_SOLANA_RPC (defaults to the public mainnet RPC; a provider like Helius is better).
@@ -10,7 +10,6 @@ import * as G from '../js/game.js';
 import { base58Decode, isAddress, linkMessage, rpcClient, scanDeposits, verifyWalletSignature } from './solana.js';
 import { dayOf } from './admin.js';
 
-const DEFAULTS = { coinsPerCrop: 1 };
 const CHALLENGE_MS = 10 * 60e3;
 
 export function depositConfig(env = process.env) {
@@ -29,11 +28,9 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
   const challenges = new Map();      // userId → { wallet, message, expires }
   const status = { lastScan: null, lastError: null, scanning: false };
 
-  const settings = () => ({ ...DEFAULTS, ...(store.getSetting('crop') || {}) });
-
-  // Credit `amount` $CROP to a player's farm as coins. Call inside store.tx.
+  // Add `amount` $CROP to a player's in-game balance (1:1). Call inside store.tx.
   function creditFarm(userId, amount, now) {
-    const coins = G.round2(amount * settings().coinsPerCrop);
+    const coins = G.round2(amount);
     const state = loadFarm(userId);
     state.coins = G.round2(state.coins + coins);
     state.stats.cropDeposited = G.round2((state.stats.cropDeposited || 0) + amount);
@@ -58,7 +55,7 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
       }
       const coins = creditFarm(user.id, dep.amount, now);
       store.addDeposit({ ...dep, wallet: dep.from, coins, userId: user.id, status: 'credited', notedAt: now });
-      log.info?.(`Credited ${dep.amount} $CROP → ${coins} coins to ${user.username} (${dep.signature})`);
+      log.info?.(`Credited ${coins} $CROP to ${user.username} (${dep.signature})`);
     });
   }
 
@@ -92,7 +89,6 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
     enabled: config.enabled,
     mint: config.enabled ? config.mint : null,
     treasury: config.enabled ? config.treasury : null,
-    coinsPerCrop: settings().coinsPerCrop,
   });
 
   const routes = {
@@ -148,15 +144,6 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
         totals,
         recent: store.recentDeposits(100),
       });
-    },
-
-    'POST /api/admin/deposits/rate': (req, { userId, body }) => {
-      const rate = Number(body?.coinsPerCrop);
-      if (!Number.isFinite(rate) || rate <= 0 || rate > 1e9) return bad('Coins per $CROP must be a positive number.');
-      const prev = settings().coinsPerCrop;
-      store.putSetting('crop', { ...settings(), coinsPerCrop: rate });
-      store.addLog(store.userById(userId)?.username || `#${userId}`, 'change $CROP rate', [`coinsPerCrop: ${prev} → ${rate}`], Date.now());
-      return ok(publicInfo());
     },
 
     // Credit an unmatched deposit (e.g. sent from an exchange) to a player by username.

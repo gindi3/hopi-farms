@@ -74,7 +74,7 @@ test('buy up to 9 packs at once, all or nothing', async () => {
   assert.equal(tooMany.status, 400);
   const cantAfford = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'pico', count: 3 } });
   assert.equal(cantAfford.status, 400);
-  assert.equal(cantAfford.data.error, 'You need 60 coins for 3 Pico packs.');
+  assert.equal(cantAfford.data.error, 'You need 60 $CROP for 3 Pico packs.');
   const me = await call('GET', '/api/me', { token: g.token });
   assert.equal(me.data.state.coins, 40); // nothing charged for the refused batch
   const nine = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'feeble', count: 9 } });
@@ -86,7 +86,7 @@ test('game rule errors come back as 400 with a message', async () => {
   const g = await guest();
   const r = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'premium' } });
   assert.equal(r.status, 400);
-  assert.match(r.data.error, /You need 800 coins/);
+  assert.match(r.data.error, /You need 800 \$CROP/);
   const bad = await call('POST', '/api/action', { token: g.token, body: { type: 'plant', plot: '1.5', cropId: 'f_potato' } });
   assert.equal(bad.status, 400);
 });

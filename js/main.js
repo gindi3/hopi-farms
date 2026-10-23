@@ -341,7 +341,7 @@ async function doHarvest(i, el) {
   const rect = el.getBoundingClientRect();
   const res = await dispatch({ type: 'harvest', plot: i });
   if (!res) return;
-  floatText(`+${fmt(res.coins)} coins`, rect.left + rect.width / 2, rect.top);
+  floatText(`+${fmt(res.coins)} $CROP`, rect.left + rect.width / 2, rect.top);
   if (res.gems) floatText(`+${res.gems} gems${res.firstTime ? ' (first!)' : ''}`, rect.left + rect.width / 2, rect.top + 20);
   updatePlots();
 }
@@ -350,7 +350,7 @@ async function harvestAll() {
   const res = await dispatch({ type: 'harvestAll' });
   if (!res) return;
   if (!res.n) return toast('Nothing is ready yet.');
-  toast(`Harvested ${plural(res.n, 'crop')}: +${fmt(res.coins)} coins${res.gems ? `, +${res.gems} gems` : ''}`);
+  toast(`Harvested ${plural(res.n, 'crop')}: +${fmt(res.coins)} $CROP${res.gems ? `, +${res.gems} gems` : ''}`);
   updatePlots();
 }
 
@@ -372,7 +372,7 @@ function seedButton(crop, n, action, extra = '') {
   return `
     <button class="item slot" data-action="${action}" data-crop="${crop.id}" ${extra}>
       ${spriteImg(`crop:${crop.id}`, 32)}
-      <span class="meta"><b>${crop.name}</b><span>${TIER[crop.tier].label} · ${r.label} · ${r.hours}h · ${fmt(G.cropPayout(crop.id, state.level))} coins</span></span>
+      <span class="meta"><b>${crop.name}</b><span>${TIER[crop.tier].label} · ${r.label} · ${r.hours}h · ${fmt(G.cropPayout(crop.id, state.level))} $CROP</span></span>
       <span class="qty">×${n}</span>
     </button>`;
 }
@@ -425,7 +425,7 @@ function renderCropPanel() {
     <div class="segbar">${[0, 1, 2, 3, 4].map(k => `<i class="${k < filled ? 'on' : ''}"></i>`).join('')}</div>
     <hr>
     <div class="cp-row"><span>Time Left:</span><b>${fmtTime(s.prog.msLeft)}</b></div>
-    <div class="cp-row"><span>Total Harvest</span><b>${fmt(G.cropPayout(crop.id, state.level))} coins</b></div>
+    <div class="cp-row"><span>Total Harvest</span><b>${fmt(G.cropPayout(crop.id, state.level))} $CROP</b></div>
     ${gems ? `<div class="cp-row small gemline"><span>Gem bonus</span><b>+${gems} gems</b></div>` : ''}
     <div class="cp-row small"><span>Valley bonus</span><b>RTP ${pct(G.rtp(state.level))}</b></div>
     <hr>
@@ -655,8 +655,8 @@ function renderHouse() {
         <table class="odds">
           <tr><td>Packs opened</td><td class="num">${fmt(s.packsOpened)}</td></tr>
           <tr><td>Harvests</td><td class="num">${fmt(s.harvests)}</td></tr>
-          <tr><td>Coins spent</td><td class="num">${fmt(s.coinsSpent)}</td></tr>
-          <tr><td>Coins earned</td><td class="num">${fmt(s.coinsEarned)}</td></tr>
+          <tr><td>$CROP spent</td><td class="num">${fmt(s.coinsSpent)}</td></tr>
+          <tr><td>$CROP earned</td><td class="num">${fmt(s.coinsEarned)}</td></tr>
         </table>
       </div>
       <div class="card wide">
@@ -690,10 +690,9 @@ async function renderCropCard() {
     return;
   }
   if (!$('#crop-card')) return;
-  const rate = `1 $CROP = ${fmt(w.coinsPerCrop)} coin${w.coinsPerCrop === 1 ? '' : 's'}`;
   let bodyHtml;
   if (!w.enabled) {
-    bodyHtml = `<p class="muted">Deposits open soon. You'll be able to send $CROP from your Solana wallet to get coins.</p>`;
+    bodyHtml = `<p class="muted">Deposits open soon. You'll be able to send $CROP from your Solana wallet to play with.</p>`;
   } else if (!w.canLink) {
     bodyHtml = `<p class="muted">Save your farm with a username first, then link your Solana wallet to deposit $CROP.</p>
       <div class="actions"><button class="btn orange" data-action="profile">Save my farm</button></div>`;
@@ -702,17 +701,17 @@ async function renderCropCard() {
       <div class="actions"><button class="btn orange" data-action="link-wallet">Link wallet</button></div>`;
   } else {
     const list = w.deposits.length
-      ? `<table class="odds"><tbody>${w.deposits.map(d => `<tr><td>${new Date(d.time).toLocaleDateString()}</td><td class="num">${fmt(d.amount)} $CROP</td><td class="num">+${fmt(d.coins)} coins</td></tr>`).join('')}</tbody></table>`
+      ? `<table class="odds"><tbody>${w.deposits.map(d => `<tr><td>${new Date(d.time).toLocaleDateString()}</td><td class="num">${fmt(d.amount)} $CROP</td><td class="num">${d.status === 'credited' ? 'added' : ''}</td></tr>`).join('')}</tbody></table>`
       : '<p class="muted">No deposits yet.</p>';
     bodyHtml = `
-      <div class="muted">Linked wallet: <b>${esc(shortAddr(w.wallet))}</b> · ${rate}</div>
-      <p class="muted" style="margin:0">Send $CROP <b>from your linked wallet</b> to the game wallet below. Coins arrive about a minute after Solana confirms the transfer. Deposits are one way: $CROP can't be withdrawn.</p>
+      <div class="muted">Linked wallet: <b>${esc(shortAddr(w.wallet))}</b></div>
+      <p class="muted" style="margin:0">Send $CROP <b>from your linked wallet</b> to the game wallet below. It shows up in your farm about a minute after Solana confirms the transfer. Deposits are one way: $CROP can't be withdrawn.</p>
       <div class="copy-row"><code class="addr">${esc(w.treasury)}</code><button class="btn cream small" data-action="copy" data-copy="${esc(w.treasury)}">Copy</button></div>
       <div class="muted">Token: <code class="addr small">${esc(w.mint)}</code></div>
       ${list}
       <div class="actions"><button class="btn cream small" data-action="link-wallet">Change wallet</button></div>`;
   }
-  box.innerHTML = `<div class="row">${spriteImg('coin', 40)}<div><h4>$CROP deposits</h4><div class="muted">${rate}</div></div></div>${bodyHtml}`;
+  box.innerHTML = `<div class="row">${spriteImg('coin', 40)}<div><h4>Deposit $CROP</h4><div class="muted">Your balance: ${fmt(state.coins)} $CROP</div></div></div>${bodyHtml}`;
 }
 
 async function linkWallet() {
@@ -1070,7 +1069,7 @@ function syncFarm() {
   api('GET', '/me').then((data) => {
     const before = state.coins;
     adopt(data);
-    if (state.coins > before + 0.001) toast(`+${fmt(G.round2(state.coins - before))} coins arrived.`);
+    if (state.coins > before + 0.001) toast(`+${fmt(G.round2(state.coins - before))} $CROP arrived.`);
     refresh();
   }).catch(() => {});
 }
@@ -1097,8 +1096,8 @@ function showIntro() {
     <h3>Welcome to ${GAME_NAME}!</h3>
     <div class="reveal">
       <img class="px intro-logo" src="brand/logo-transparent.svg" width="136" height="168" alt="The Hopi Farms farmer" draggable="false">
-      <p>Here are ${fmt(state.coins)} coins and a few Feeble seeds to get started.</p>
-      <p class="muted">Plant seeds, wait for them to grow, and harvest them for coins. Spin seed packs at the Market. Rarer crops pay more and some pay gems. Level up your valley in the House for more plots and better returns.</p>
+      <p>Here are ${fmt(state.coins)} $CROP and a few Feeble seeds to get started.</p>
+      <p class="muted">Plant seeds, wait for them to grow, and harvest them for $CROP. Spin seed packs at the Market. Rarer crops pay more and some pay gems. Level up your valley in the House for more plots and better returns.</p>
       <div class="actions"><button class="btn orange" data-action="plant-all">Plant my seeds</button></div>
     </div>`);
 }

@@ -33,7 +33,7 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
     case 'buyOpen': {
       const tier = tierOf(action), count = countOf(action);
       const total = TIER[tier].cost * count;
-      if (state.coins < total) throw new G.GameError(`You need ${total} coins for ${count} ${TIER[tier].label} pack${count === 1 ? '' : 's'}.`);
+      if (state.coins < total) throw new G.GameError(`You need ${total} $CROP for ${count} ${TIER[tier].label} pack${count === 1 ? '' : 's'}.`);
       const results = [];
       for (let i = 0; i < count; i++) {
         G.buyPack(state, tier);

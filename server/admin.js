@@ -159,7 +159,7 @@ export function adminRoutes({ store, ok, bad, loadFarm, onEconomyChange }) {
       if (!Number.isInteger(id) || !store.farmRow(id)) return bad('No such player.', 404);
       const coins = Number(body.coins || 0), gems = Number(body.gems || 0);
       if (!Number.isFinite(coins) || !Number.isInteger(gems) || Math.abs(coins) > 1e9 || Math.abs(gems) > 1e9) {
-        return bad('Coins must be a number and gems a whole number.');
+        return bad('$CROP must be a number and gems a whole number.');
       }
       const state = loadFarm(id);
       const before = { coins: state.coins, gems: state.gems, name: state.name };

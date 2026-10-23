@@ -69,7 +69,7 @@ export class GameError extends Error {}
 
 export function buyPack(state, tier) {
   const cost = TIER[tier].cost;
-  if (state.coins < cost) throw new GameError(`Not enough coins for a ${TIER[tier].label} pack.`);
+  if (state.coins < cost) throw new GameError(`Not enough $CROP for a ${TIER[tier].label} pack.`);
   state.coins = round2(state.coins - cost);
   state.stats.coinsSpent = round2(state.stats.coinsSpent + cost);
   state.stats.packSpend = round2((state.stats.packSpend || 0) + cost);
@@ -172,7 +172,7 @@ export function useElixir(state, plotIndex, now) {
 export function levelUp(state) {
   const cost = nextLevelCost(state.level);
   if (cost === null) throw new GameError('Your valley is at max level.');
-  if (state.coins < cost) throw new GameError(`You need ${cost} coins for the next level.`);
+  if (state.coins < cost) throw new GameError(`You need ${cost} $CROP for the next level.`);
   state.coins = round2(state.coins - cost);
   state.stats.coinsSpent = round2(state.stats.coinsSpent + cost);
   state.stats.levelSpend = round2((state.stats.levelSpend || 0) + cost);
