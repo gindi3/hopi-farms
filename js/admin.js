@@ -428,6 +428,10 @@ function countChanges(a, b) {
 
 document.addEventListener('input', (e) => {
   const doc = e.target.closest('#view [data-doc]');
+  const kindSel = e.target.closest('#view [data-ev-kind]');
+  if (kindSel) { eventKind = kindSel.value; return run(renderEvents); }
+  const dl = e.target.closest('#view [data-ev-delivered]');
+  if (dl) return run(async () => { await api('POST', '/admin/events/delivered', { id: Number(dl.dataset.evDelivered), delivered: dl.checked }); toast(dl.checked ? 'Marked delivered.' : 'Marked not delivered.'); });
   const pick = e.target.closest('#view [data-docs-page]');
   if (pick) { docsPage = pick.value; return run(renderDocs); }
   if (doc && docsDraft) return setDoc(doc.dataset.doc, doc.type === 'checkbox' ? doc.checked : doc.value);
@@ -741,6 +745,66 @@ async function renderLog() {
 
 // --- Routing ---------------------------------------------------------------------------------
 
+// --- Auctions and lotteries -------------------------------------------------------------
+
+let eventKind = 'auction';
+const localInput = (t) => { const d = new Date(t - new Date(t).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
+
+async function renderEvents() {
+  const r = await api('GET', '/admin/events');
+  const a = eventKind === 'auction';
+  const field = (label, html) => `<div class="field"><label>${label}</label>${html}</div>`;
+  const row = (e) => {
+    const status = e.status === 'live' ? (Date.now() < e.startsAt ? 'scheduled' : 'live') : e.status;
+    const stats = e.kind === 'auction'
+      ? (e.topBid ? `Top bid <b>${fmt(e.topBid.amount)}</b> gems by ${esc(e.topBid.name)} · ${fmt(e.bids)} bids from ${fmt(e.bidders)} players` : `No bids yet · starts at ${fmt(e.startBid)} gems, +${fmt(e.minStep)} per raise`)
+      : `${fmt(e.totalTickets)} tickets from ${fmt(e.entrants)} players · ${fmt(e.ticketPrice)} gems each · ${fmt(e.winnersCount)} winner${e.winnersCount === 1 ? '' : 's'}${e.maxTickets ? ` · max ${fmt(e.maxTickets)} each` : ''}`;
+    const gemsIn = e.kind === 'auction' ? (e.topBid?.amount || 0) : e.totalTickets * e.ticketPrice;
+    return `<div class="card ev-admin">
+      <div class="row" style="justify-content:space-between"><div><span class="pill ${status === 'live' ? 'good' : ''}">${status}</span> <b>${esc(e.title)}</b> <span class="muted">#${e.id} · ${e.kind}</span></div>
+        <div class="row">
+          ${e.status === 'live' ? `<button class="btn" data-ev="end" data-id="${e.id}">End now</button><button class="btn danger" data-ev="cancel" data-id="${e.id}">Cancel &amp; refund</button>` : ''}
+          ${e.status === 'ended' && e.winners.length ? `<label class="check"><input type="checkbox" data-ev-delivered="${e.id}" ${e.delivered ? 'checked' : ''}> Prize delivered</label>` : ''}
+        </div></div>
+      <div class="muted">${e.status === 'live' ? `${Date.now() < e.startsAt ? `Starts ${new Date(e.startsAt).toLocaleString()} · ` : ''}Ends ${new Date(e.endsAt).toLocaleString()}` : `${e.status === 'ended' ? 'Ended' : 'Cancelled'} ${new Date(e.settledAt).toLocaleString()}`} · ${fmt(gemsIn)} gems in</div>
+      <div>${stats}</div>
+      ${e.winners.length ? `<div><b>${e.winners.length > 1 ? 'Winners' : 'Winner'}:</b> ${e.winners.map(w => `<b>${esc(w.name)}</b>${w.amount ? ` (${fmt(w.amount)} gems)` : ` (${fmt(w.tickets)} tickets)`}`).join(', ')}</div>` : (e.status === 'ended' ? '<div class="muted">No winner: nobody entered.</div>' : '')}
+      ${e.entries?.length ? `<details><summary>${e.entries.length} entr${e.entries.length === 1 ? 'y' : 'ies'}</summary>${tableView(['Player', 'Tickets'], e.entries.map(x => [esc(x.name), fmt(x.tickets)]))}</details>` : ''}
+    </div>`;
+  };
+  view.innerHTML = `
+    <div class="section-head"><div><h2>Auctions &amp; Lotteries</h2><div class="muted">Players bid or buy tickets with gems in the game's Auction and Lottery tabs. Winners are picked by the server when time runs out. You deliver the prize yourself, then tick "Prize delivered".</div></div>
+      <button class="btn" data-refresh>Refresh</button></div>
+    <div class="grid ev-grid">
+      <div class="card"><h3>New ${a ? 'auction' : 'lottery'}</h3>
+        <form id="ev-form" class="ev-new">
+          ${field('Type', `<select name="kind" data-ev-kind><option value="auction" ${a ? 'selected' : ''}>Auction (highest bid wins)</option><option value="lottery" ${a ? '' : 'selected'}>Lottery (random draw)</option></select>`)}
+          ${field('Prize title', '<input type="text" name="title" maxlength="80" required placeholder="e.g. 2023 Baxcalibur #210 PSA 10">')}
+          ${field('Description (optional)', '<input type="text" name="description" maxlength="1000" placeholder="e.g. Fair market value $349. Shipped to the winner.">')}
+          ${field('Picture link (optional)', '<input type="text" name="image" placeholder="https://…">')}
+          <div class="form-grid">
+            ${field('Starts (blank = now)', '<input type="datetime-local" name="startsAt">')}
+            ${field('Ends', `<input type="datetime-local" name="endsAt" required value="${localInput(Date.now() + 7 * 86400e3)}">`)}
+          </div>
+          <div class="form-grid">${a
+            ? field('Starting bid (gems)', '<input type="number" name="startBid" min="1" step="1" value="50" required>') + field('Minimum raise (gems)', '<input type="number" name="minStep" min="1" step="1" value="5" required>')
+            : field('Ticket price (gems)', '<input type="number" name="ticketPrice" min="1" step="1" value="5" required>') + field('Max tickets per player (0 = no limit)', '<input type="number" name="maxTickets" min="0" step="1" value="0">') + field('Number of winners', '<input type="number" name="winnersCount" min="1" max="100" step="1" value="1" required>')}
+          </div>
+          <div class="row"><button class="btn primary" type="submit">Start ${a ? 'auction' : 'lottery'}</button></div>
+        </form>
+      </div>
+      <div class="ev-list">${r.events.map(row).join('') || '<div class="card"><p class="muted">Nothing yet. Start an auction or lottery on the left.</p></div>'}</div>
+    </div>`;
+}
+
+async function eventAction(kind, id) {
+  if (kind === 'end' && !confirm('End it now and pick the winner from what is in so far?')) return;
+  if (kind === 'cancel' && !confirm('Cancel it? There is no winner and every gem players put in goes back to them.')) return;
+  const r = await api('POST', `/admin/events/${kind}`, { id });
+  toast(kind === 'cancel' ? `Cancelled. Refunded ${fmt(r.refunded)} gems.` : 'Ended.');
+  await renderEvents();
+}
+
 // --- Docs editor ---------------------------------------------------------------------
 // Edits the text on /docs: prizes, each page's title / intro / extra text / hidden flag, and
 // extra pages. Number tables on the docs are built from the economy, so they aren't here.
@@ -838,7 +902,7 @@ async function docsAction(kind, el) {
   await renderDocs();
 }
 
-const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, deposits: renderDeposits, withdrawals: renderWithdrawals, leaders: renderLeaders, docs: renderDocs, log: renderLog };
+const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, deposits: renderDeposits, withdrawals: renderWithdrawals, leaders: renderLeaders, docs: renderDocs, events: renderEvents, log: renderLog };
 
 async function run(fn) {
   try { await fn(); } catch (e) { showError(e); }
@@ -866,6 +930,8 @@ document.addEventListener('click', (e) => {
       await renderDeposits();
     });
   }
+  const ev = e.target.closest('[data-ev]');
+  if (ev) return run(() => eventAction(ev.dataset.ev, Number(ev.dataset.id)));
   const da = e.target.closest('[data-docs]');
   if (da) return run(() => docsAction(da.dataset.docs, da));
   const pa = e.target.closest('[data-pricing]');
@@ -900,6 +966,21 @@ document.addEventListener('click', (e) => {
     try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked */ }
     renderSignIn();
   }
+});
+
+document.addEventListener('submit', (e) => {
+  const f = e.target.closest('#ev-form');
+  if (!f) return;
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(f));
+  const int = (v) => (v === undefined || v === '' ? undefined : Number(v));
+  const body = {
+    kind: d.kind, title: d.title, description: d.description, image: d.image,
+    startsAt: d.startsAt ? new Date(d.startsAt).getTime() : undefined, endsAt: new Date(d.endsAt).getTime(),
+    startBid: int(d.startBid), minStep: int(d.minStep), ticketPrice: int(d.ticketPrice), maxTickets: int(d.maxTickets), winnersCount: int(d.winnersCount),
+  };
+  if (!confirm(`Start this ${body.kind} for "${body.title}"? Players can join as soon as it starts.`)) return;
+  run(async () => { await api('POST', '/admin/events', body); toast(`${body.kind === 'auction' ? 'Auction' : 'Lottery'} started.`); await renderEvents(); });
 });
 
 addEventListener('beforeunload', (e) => {

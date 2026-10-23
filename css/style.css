@@ -792,3 +792,22 @@ a.tx-link { color: #3a4a9a; }
 .auth-guest { text-align: center; margin: 12px 0 0; }
 .link { background: none; border: 0; padding: 0; font: inherit; font-size: 16px; color: var(--ink-soft); text-decoration: underline; cursor: pointer; }
 .link:hover { color: inherit; }
+
+/* Auction and Lottery */
+.section-title:has(img) { display: flex; align-items: center; gap: 10px; }
+.ev-card { display: flex; flex-direction: column; gap: 10px; }
+.ev-card.ended, .ev-card.cancelled { opacity: .85; }
+.ev-head { display: flex; gap: 12px; align-items: flex-start; }
+.ev-head h4 { margin: 0 0 2px; }
+.ev-head p { margin: 2px 0; }
+.prize-pic { width: 72px; height: 96px; object-fit: cover; border-radius: 6px; border: 3px solid var(--outline); flex: none; }
+.ev-timer { font-size: 20px; color: var(--ink); }
+.ev-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 6px; }
+.ev-stats > div { background: rgba(255, 255, 255, .45); border-radius: 6px; padding: 4px 8px; display: flex; flex-direction: column; }
+.ev-stats small { color: var(--ink-soft); font-size: 16px; }
+.ev-form input { width: 110px; }
+.ev-bids summary { cursor: pointer; color: var(--ink-soft); }
+.ev-bids .row { justify-content: space-between; }
+.good-note { color: #3e7a2a; margin: 0; }
+.sub-title { grid-column: 1 / -1; margin: 8px 0 0; font-family: var(--font-pixel); color: var(--cream-text); text-shadow: var(--text-outline); }
+.ev-intro .row { align-items: flex-start; }

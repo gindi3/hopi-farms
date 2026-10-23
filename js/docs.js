@@ -157,7 +157,10 @@ const BUILT_IN = [
       ['Daily chest', CHESTS.map(c => `${c.label} ${c.gems[0]}–${c.gems[1]}`).join(' · ')],
     ])}
     <h2 id="spend">How to spend gems</h2>
-    <p>Use gems to <b>Finish now</b> on a growing crop: ${fmt(ECON.skipGemsPerHour)} gem${ECON.skipGemsPerHour === 1 ? '' : 's'} per hour left.</p>
+    <ul>
+      <li><b>Finish now</b> on a growing crop: ${fmt(ECON.skipGemsPerHour)} gem${ECON.skipGemsPerHour === 1 ? '' : 's'} per hour left.</li>
+      <li>Bid in the <b>Auction</b> or buy <b>Lottery</b> tickets for prizes. See ${link('auction-lottery', 'Auction &amp; Lottery')}.</li>
+    </ul>
     ${hint('Gems have no cash value and stay in the game.', 'warn')}` },
 
   { group: 'The Game', id: 'levels', title: 'Levels & RTP', icon: 'xp', render: () => `
@@ -245,6 +248,27 @@ const BUILT_IN = [
     </div>`).join('')}` : '<p>Prizes for top farmers will be announced soon.</p>'}
     ${docs.prizeNote ? hint(esc(docs.prizeNote)) : ''}` },
 
+  { group: 'The Game', id: 'auction-lottery', title: 'Auction & Lottery', icon: 'gavel', render: () => `
+    <p class="lead">Spend your gems on prizes in the Auction and Lottery tabs.</p>
+    ${hint('You need an account to bid or buy tickets, so we know who to send the prize to.')}
+    <h2 id="auction">${icon('gavel', 28)} Auction</h2>
+    <ul>
+      <li>Each auction has a starting bid and a minimum raise, both in gems.</li>
+      <li>Your bid is <b>held</b> from your gems while you're the top bidder. If someone outbids you, it comes straight back.</li>
+      <li>Raising your own bid only takes the difference.</li>
+      <li>The top bid when the timer runs out wins, and those gems are spent.</li>
+      <li><b>No sniping:</b> a bid in the last 2 minutes pushes the end back to 2 minutes from then.</li>
+    </ul>
+    <h2 id="lottery">${icon('ticket', 28)} Lottery</h2>
+    <ul>
+      <li>Buy tickets with gems. Every ticket is one equal chance.</li>
+      <li>Some lotteries limit how many tickets one player can hold.</li>
+      <li>When the timer ends, the server draws the winners with a secure random number generator. Each player can win only once per lottery.</li>
+      <li>Tickets are spent whether you win or not.</li>
+    </ul>
+    <h2 id="after">After you win</h2>
+    <p>Winners show on the tab for everyone to see. The team gets in touch to deliver your prize. If an auction or lottery is ever cancelled, every gem put into it is refunded.</p>` },
+
   { group: 'The Game', id: 'locations', title: 'The Valley', icon: 'chest_wooden', render: () => `
     <p class="lead">Tap a place on the Valley map, or use the tabs, to visit it.</p>
     ${table(['Place', 'What you do there'], [
@@ -255,6 +279,8 @@ const BUILT_IN = [
       [`${icon('fertilizer', 22)} Backpack`, 'Your seeds, produce and potions.'],
       [`${icon('ledger', 22)} My History`, 'Everything you have spent and earned, pack by pack.'],
       [`${icon('coin', 22)} Withdraw`, 'Request $CROP back to your wallet.'],
+      [`${icon('gavel', 22)} Auction`, 'Bid gems on prizes.'],
+      [`${icon('ticket', 22)} Lottery`, 'Buy tickets with gems for a chance at prizes.'],
       [`${icon('xp', 22)} Leaders`, 'The top farmers by XP, who win prizes.'],
     ])}` },
 

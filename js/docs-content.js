@@ -13,7 +13,7 @@ export const DOCS_PAGES = [
   ['farming', 'Planting & Harvesting', 'The Game'], ['gems', 'Gems', 'The Game'],
   ['levels', 'Levels & RTP', 'The Game'], ['chests', 'Treasure Chests', 'The Game'],
   ['potions', 'Potions Master', 'The Game'], ['farms', 'Farms', 'The Game'],
-  ['leaderboard', 'Leaderboard & Prizes', 'The Game'], ['locations', 'The Valley', 'The Game'],
+  ['leaderboard', 'Leaderboard & Prizes', 'The Game'], ['auction-lottery', 'Auction & Lottery', 'The Game'], ['locations', 'The Valley', 'The Game'],
   ['deposits', 'Deposits', 'Wallet'], ['withdrawals', 'Withdrawals', 'Wallet'],
   ['fairness', 'Fairness', 'Help'], ['faq', 'FAQ', 'Help'],
 ].map(([id, title, group]) => ({ id, title, group }));

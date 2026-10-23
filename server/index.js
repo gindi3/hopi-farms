@@ -21,6 +21,7 @@ import { openDb } from './db.js';
 import { adminRoutes, actionStats, dayOf } from './admin.js';
 import { createDeposits, depositConfig } from './deposits.js';
 import { createWithdrawals } from './withdrawals.js';
+import { createEvents } from './events.js';
 import { withDocDefaults } from '../js/docs-content.js';
 import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY, withDefaults } from '../js/economy.js';
 
@@ -215,6 +216,8 @@ export function createServer({
     rpc: deposits.rpc,
   });
   Object.assign(routes, withdrawals.routes);
+  const events = createEvents({ store, ok, bad, loadFarm, log });
+  Object.assign(routes, events.routes);
   const admin = {
     ...adminRoutes({
       store, ok, bad, loadFarm,
@@ -222,6 +225,7 @@ export function createServer({
     }),
     ...deposits.adminRoutes,
     ...withdrawals.adminRoutes,
+    ...events.adminRoutes,
   };
   if (depositOpts.autoStart !== false) deposits.start();
 
@@ -288,7 +292,8 @@ export function createServer({
   const pruneTimer = setInterval(pruneEmptyGuests, 3600e3);
   pruneTimer.unref();
 
-  server.on('close', () => { clearInterval(pruneTimer); deposits.stop(); store.close(); });
+  server.on('close', () => { clearInterval(pruneTimer); deposits.stop(); events.stop(); store.close(); });
+  server.events = events;       // for tests
   server.deposits = deposits;   // for tests
   server.store = store;   // for tests and the admin CLI-style setup in tests
   return server;

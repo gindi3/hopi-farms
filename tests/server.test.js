@@ -332,3 +332,97 @@ test('docs Markdown escapes HTML and only links to safe places', async () => {
   assert.ok(!html.includes('javascript:'));
   assert.ok(html.includes('<b>b</b>'));
 });
+
+// A signed-up player holding `gems`. Returns { token, id }.
+async function richPlayer(admin, gems) {
+  const g = await guest();
+  const username = `p_${Math.floor(Math.random() * 1e9)}`;
+  await call('POST', '/api/register', { token: g.token, body: { username, password: 'playerpass1' } });
+  const id = server.store.userByName(username).id;
+  await call('POST', '/api/admin/player/adjust', { token: admin, body: { id, gems } });
+  return { token: g.token, id };
+}
+const gemsOf = async (p) => (await call('GET', '/api/me', { token: p.token })).data.state.gems;
+
+test('auction: bids hold gems, outbid players get theirs back, the top bid wins', async () => {
+  const admin = await adminToken();
+  const a = await richPlayer(admin, 100), b = await richPlayer(admin, 100);
+  const startA = await gemsOf(a), startB = await gemsOf(b);
+  const made = await call('POST', '/api/admin/events', { token: admin, body: { kind: 'auction', title: 'Card', startBid: 10, minStep: 5, endsAt: Date.now() + 3600e3 } });
+  assert.equal(made.status, 200);
+  const id = made.data.event.id;
+
+  const g = await guest();
+  assert.equal((await call('POST', '/api/events/bid', { token: g.token, body: { id, amount: 10 } })).status, 400);   // guests can't bid
+  assert.match((await call('POST', '/api/events/bid', { token: a.token, body: { id, amount: 9 } })).data.error, /at least 10/);
+
+  assert.equal((await call('POST', '/api/events/bid', { token: a.token, body: { id, amount: 10 } })).status, 200);
+  assert.equal(await gemsOf(a), startA - 10);
+  assert.match((await call('POST', '/api/events/bid', { token: b.token, body: { id, amount: 12 } })).data.error, /at least 15/);
+  assert.equal((await call('POST', '/api/events/bid', { token: b.token, body: { id, amount: 20 } })).status, 200);
+  assert.equal(await gemsOf(a), startA);            // outbid: refunded
+  assert.equal(await gemsOf(b), startB - 20);
+  assert.equal((await call('POST', '/api/events/bid', { token: b.token, body: { id, amount: 30 } })).status, 200);
+  assert.equal(await gemsOf(b), startB - 30);       // raising your own bid only takes the difference
+  assert.match((await call('POST', '/api/events/bid', { token: a.token, body: { id, amount: 1000 } })).data.error, /only have/);
+
+  const ended = await call('POST', '/api/admin/events/end', { token: admin, body: { id } });
+  assert.equal(ended.data.event.status, 'ended');
+  assert.equal(ended.data.event.winners[0].userId, b.id);
+  assert.equal(await gemsOf(b), startB - 30);       // winner's gems are spent
+  const pub = (await call('GET', '/api/events', { token: b.token })).data.events.find(e => e.id === id);
+  assert.equal(pub.winners[0].you, true);
+  assert.equal((await call('POST', '/api/events/bid', { token: a.token, body: { id, amount: 100 } })).status, 400);
+});
+
+test('auction: a late bid pushes the end back so nobody can snipe', async () => {
+  const admin = await adminToken();
+  const a = await richPlayer(admin, 50);
+  const made = await call('POST', '/api/admin/events', { token: admin, body: { kind: 'auction', title: 'Snipe', startBid: 1, minStep: 1, endsAt: Date.now() + 70e3 } });
+  const r = await call('POST', '/api/events/bid', { token: a.token, body: { id: made.data.event.id, amount: 1 } });
+  assert.ok(r.data.event.endsAt >= Date.now() + 115e3);
+});
+
+test('lottery: tickets cost gems, limits hold, the draw picks distinct ticket holders', async () => {
+  const admin = await adminToken();
+  const players = [await richPlayer(admin, 100), await richPlayer(admin, 100), await richPlayer(admin, 100)];
+  const made = await call('POST', '/api/admin/events', { token: admin, body: { kind: 'lottery', title: 'Raffle', ticketPrice: 5, maxTickets: 4, winnersCount: 2, endsAt: Date.now() + 3600e3 } });
+  const id = made.data.event.id;
+  const before = await gemsOf(players[0]);
+  const r = await call('POST', '/api/events/enter', { token: players[0].token, body: { id, count: 3 } });
+  assert.equal(r.data.event.myTickets, 3);
+  assert.equal(await gemsOf(players[0]), before - 15);
+  assert.match((await call('POST', '/api/events/enter', { token: players[0].token, body: { id, count: 2 } })).data.error, /at most 4/);
+  await call('POST', '/api/events/enter', { token: players[1].token, body: { id, count: 1 } });
+  await call('POST', '/api/events/enter', { token: players[2].token, body: { id, count: 2 } });
+
+  const ended = (await call('POST', '/api/admin/events/end', { token: admin, body: { id } })).data.event;
+  assert.equal(ended.winners.length, 2);
+  assert.notEqual(ended.winners[0].userId, ended.winners[1].userId);
+  assert.ok(ended.winners.every(w => players.some(p => p.id === w.userId)));
+  assert.equal(await gemsOf(players[0]), before - 15);   // tickets are spent either way
+});
+
+test('cancelling refunds every gem; scheduled events settle on their own', async () => {
+  const admin = await adminToken();
+  const a = await richPlayer(admin, 100), b = await richPlayer(admin, 100);
+  const startA = await gemsOf(a), startB = await gemsOf(b);
+  const lot = (await call('POST', '/api/admin/events', { token: admin, body: { kind: 'lottery', title: 'L', ticketPrice: 7, winnersCount: 1, endsAt: Date.now() + 3600e3 } })).data.event.id;
+  const auc = (await call('POST', '/api/admin/events', { token: admin, body: { kind: 'auction', title: 'A', startBid: 3, minStep: 1, endsAt: Date.now() + 3600e3 } })).data.event.id;
+  await call('POST', '/api/events/enter', { token: a.token, body: { id: lot, count: 2 } });
+  await call('POST', '/api/events/bid', { token: b.token, body: { id: auc, amount: 9 } });
+  assert.equal((await call('POST', '/api/admin/events/cancel', { token: admin, body: { id: lot } })).data.refunded, 14);
+  assert.equal((await call('POST', '/api/admin/events/cancel', { token: admin, body: { id: auc } })).data.refunded, 9);
+  assert.equal(await gemsOf(a), startA);
+  assert.equal(await gemsOf(b), startB);
+
+  // Ends on its own once its time passes.
+  const soon = (await call('POST', '/api/admin/events', { token: admin, body: { kind: 'lottery', title: 'Soon', ticketPrice: 1, winnersCount: 1, endsAt: Date.now() + 61e3 } })).data.event.id;
+  await call('POST', '/api/events/enter', { token: a.token, body: { id: soon, count: 1 } });
+  server.events.settleDue(Date.now() + 62e3);
+  const all = (await call('GET', '/api/admin/events', { token: admin })).data.events;
+  const ev = all.find(e => e.id === soon);
+  assert.equal(ev.status, 'ended');
+  assert.equal(ev.winners[0].userId, a.id);
+  assert.equal((await call('POST', '/api/admin/events', { token: admin, body: { kind: 'lottery', title: 'x', ticketPrice: 1, winnersCount: 1, endsAt: Date.now() + 3600e3, image: 'http://x' } })).status, 400);
+});

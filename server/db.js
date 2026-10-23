@@ -247,6 +247,7 @@ export function openDb(file) {
       .filter(d => d.player === userId),
     addLog: (admin, action, details, now) => q.addLog.run(now, admin, action, JSON.stringify(details)),
     recentLog: (limit) => q.recentLog.all(limit).map(r => ({ ...r, details: JSON.parse(r.details) })),
+    raw: db,   // for modules that keep their own tables (events.js)
     close: () => db.close(),
   };
 }

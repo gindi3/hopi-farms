@@ -207,6 +207,7 @@ const spY = (n) => `${(n / SCENE_H) * 100}%`;
 function fmtTime(ms) {
   const s = Math.ceil(ms / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h >= 48) return `${Math.floor(h / 24)}d ${h % 24}h`;
   if (h) return `${h}h ${String(m).padStart(2, '0')}m`;
   if (m) return `${m}m ${String(sec).padStart(2, '0')}s`;
   return `${sec}s`;
@@ -1138,7 +1139,7 @@ function floatText(text, x, y) {
 
 // --- Routing and events ------------------------------------------------------
 
-const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, potions: renderPotions, house: renderHouse, backpack: renderBackpack, history: renderHistory, withdraw: renderWithdraw, leaders: renderLeaders };
+const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, potions: renderPotions, house: renderHouse, backpack: renderBackpack, history: renderHistory, withdraw: renderWithdraw, auction: () => renderEvents('auction'), lottery: () => renderEvents('lottery'), leaders: renderLeaders };
 
 function setTab(name) {
   if (name !== tab) sfx('click');
@@ -1215,6 +1216,21 @@ async function submitForm(form) {
       sfx('coins');
       toast(`Requested ${fmt(amount)} $CROP. You'll see it here once it's sent.`);
       renderWithdraw();
+    } else if (kind === 'bid' || kind === 'enter') {
+      const id = Number(form.dataset.id);
+      const ask = kind === 'bid'
+        ? `Bid ${fmt(Number(data.amount))} gems? They're held while you lead and come back if you're outbid.`
+        : `Buy ${fmt(Number(data.count))} ticket${Number(data.count) === 1 ? '' : 's'} for ${fmt(Number(data.count) * Number(form.dataset.price))} gems? Tickets are spent whether you win or not.`;
+      if (!confirm(ask)) return;
+      const res = kind === 'bid'
+        ? await api('POST', '/events/bid', { id, amount: Number(data.amount) })
+        : await api('POST', '/events/enter', { id, count: Number(data.count) });
+      adopt(res);
+      sfx(kind === 'bid' ? 'coins' : 'success');
+      toast(kind === 'bid' ? `You bid ${fmt(Number(data.amount))} gems. You're in the lead!` : `Bought ${fmt(Number(data.count))} ticket${Number(data.count) === 1 ? '' : 's'}. Good luck!`);
+      document.activeElement?.blur();
+      events = null;
+      renderEvents(tab);
     } else if (kind === 'rename') {
       if (await dispatch({ type: 'rename', name: data.name })) { toast('Name saved.'); closeModal(); }
     } else if (kind === 'register') {
@@ -1245,6 +1261,113 @@ async function logout() {
   storeToken(null);
   closeModal();
   await boot();
+}
+
+// --- Auction and Lottery (paid in gems; prizes listed by the dev) ----------------------
+
+let events = null;            // last /events reply
+let eventsAt = 0;
+const EVENT_TEXT = {
+  auction: { title: 'Auction', icon: 'gavel', none: 'No auction is running right now. Check back soon!',
+    how: 'Bid gems on prizes. Your bid is held while you lead, and you get it straight back if someone outbids you. The top bid when the timer ends wins. A bid in the last 2 minutes adds time.' },
+  lottery: { title: 'Lottery', icon: 'ticket', none: 'No lottery is running right now. Check back soon!',
+    how: 'Buy tickets with gems. Each ticket is one equal chance. Winners are drawn by the server when the timer ends, one prize per player. Tickets are spent whether you win or not.' },
+};
+
+const eventTimer = (ev) => ev.status !== 'live' ? '' : now() < ev.startsAt
+  ? `Starts in <b data-ends="${ev.startsAt}">${fmtTime(ev.startsAt - now())}</b>`
+  : `Ends in <b data-ends="${ev.endsAt}">${fmtTime(ev.endsAt - now())}</b>`;
+
+function eventCard(ev) {
+  const open = ev.status === 'live' && now() >= ev.startsAt && now() < ev.endsAt;
+  const art = ev.image ? `<img class="prize-pic" src="${esc(ev.image)}" alt="">` : spriteImg('chest_gold', 64);
+  const winners = ev.winners.length
+    ? `<p><b>${ev.winners.length > 1 ? 'Winners' : 'Winner'}:</b> ${ev.winners.map(w => `${esc(w.name)}${w.you ? ' (you!)' : ''}${w.amount ? ` · ${fmt(w.amount)} gems` : ''}`).join(', ')}</p>`
+    : (ev.status === 'ended' ? '<p class="muted">Ended with no entries.</p>' : '');
+  let body = '';
+  if (ev.kind === 'auction') {
+    body = `
+      <div class="ev-stats">
+        <div><small>${ev.topBid ? 'Top bid' : 'Starting bid'}</small>${gem(ev.topBid ? ev.topBid.amount : ev.startBid)}</div>
+        <div><small>Leader</small><b>${ev.topBid ? `${esc(ev.topBid.name)}${ev.topBid.you ? ' (you)' : ''}` : '–'}</b></div>
+        <div><small>Bids</small><b>${fmt(ev.bids)}</b></div>
+      </div>
+      ${open ? (user?.guest
+        ? `<div class="actions left"><button class="btn orange" data-action="profile">Create an account to bid</button></div>`
+        : `<form class="form ev-form" data-form="bid" data-id="${ev.id}">
+            <label>Your bid (at least ${fmt(ev.minNext)} gems)
+              <div class="row"><input name="amount" type="number" min="${ev.minNext}" step="1" value="${ev.minNext}" required>
+              <button class="btn orange" type="submit">${ev.topBid?.you ? 'Raise bid' : 'Bid'}</button></div>
+            </label>
+            ${ev.topBid?.you ? `<p class="good-note">You're winning! ${fmt(ev.topBid.amount)} gems are held.</p>` : ''}
+          </form>`) : ''}
+      ${ev.recent.length ? `<details class="ev-bids"><summary>Recent bids</summary>${ev.recent.map(b => `<div class="row tight"><span>${esc(b.name)}</span>${gem(b.amount, 14)}</div>`).join('')}</details>` : ''}`;
+  } else {
+    const chance = ev.totalTickets ? Math.min(1, (ev.myTickets / ev.totalTickets) * ev.winnersCount) : 0;
+    body = `
+      <div class="ev-stats">
+        <div><small>Ticket</small>${gem(ev.ticketPrice)}</div>
+        <div><small>Tickets in</small><b>${fmt(ev.totalTickets)}</b></div>
+        <div><small>Winners</small><b>${fmt(ev.winnersCount)}</b></div>
+        <div><small>Yours</small><b>${fmt(ev.myTickets)}${ev.maxTickets ? ` / ${fmt(ev.maxTickets)}` : ''}</b></div>
+      </div>
+      ${ev.myTickets && ev.status === 'live' ? `<p class="muted">Your chance right now: about ${(chance * 100).toFixed(chance < 0.1 ? 1 : 0)}%</p>` : ''}
+      ${open ? (user?.guest
+        ? `<div class="actions left"><button class="btn orange" data-action="profile">Create an account to enter</button></div>`
+        : `<form class="form ev-form" data-form="enter" data-id="${ev.id}" data-price="${ev.ticketPrice}">
+            <label>Tickets
+              <div class="row"><input name="count" type="number" min="1" step="1" value="1" required ${ev.maxTickets ? `max="${Math.max(1, ev.maxTickets - ev.myTickets)}"` : ''}>
+              <button class="btn orange" type="submit">Buy tickets</button></div>
+            </label>
+          </form>`) : ''}`;
+  }
+  return `
+    <div class="card ev-card ${ev.status}">
+      <div class="ev-head">${art}<div>
+        <h4>${esc(ev.title)}</h4>
+        ${ev.description ? `<p class="muted">${esc(ev.description)}</p>` : ''}
+        <p class="ev-timer">${ev.status === 'live' ? eventTimer(ev) : ev.status === 'ended' ? 'Ended' : 'Cancelled'}</p>
+      </div></div>
+      ${body}${winners}
+    </div>`;
+}
+
+async function renderEvents(kind) {
+  const t = EVENT_TEXT[kind];
+  // Don't wipe a bid the player is typing; the next refresh picks up changes.
+  if (view.querySelector('.ev-form input') === document.activeElement && events) return;
+  if (!view.querySelector(`[data-events="${kind}"]`)) {
+    view.innerHTML = `<h2 class="section-title">${spriteImg(t.icon, 32)} ${t.title}</h2><div class="cards" data-events="${kind}"><div class="card wide"><p class="muted">Loading…</p></div></div>`;
+  }
+  if (!ONLINE) { $('[data-events]').innerHTML = `<div class="card wide"><p class="muted">The ${t.title.toLowerCase()} needs the Hopi Farms server.</p></div>`; return; }
+  try {
+    events = await api('GET', '/events');
+    eventsAt = Date.now();
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+    $('[data-events]').innerHTML = `<div class="card wide"><p class="muted">${esc(e.message)}</p></div>`;
+    return;
+  }
+  const box = view.querySelector(`[data-events="${kind}"]`);
+  if (tab !== kind || !box) return;
+  const mine = events.events.filter(e => e.kind === kind);
+  const live = mine.filter(e => e.status === 'live'), done = mine.filter(e => e.status !== 'live');
+  box.innerHTML = `
+    <div class="card wide ev-intro"><div class="row">${spriteImg('gem', 32)}<div><b>You have ${fmt(state.gems)} gems.</b><div class="muted">${t.how}</div></div></div></div>
+    ${live.map(eventCard).join('') || `<div class="card wide"><p class="muted">${t.none}</p></div>`}
+    ${done.length ? `<h3 class="sub-title wide">Recent results</h3>${done.map(eventCard).join('')}` : ''}`;
+}
+
+function tickEvents() {
+  if (tab !== 'auction' && tab !== 'lottery') return;
+  let ended = false;
+  view.querySelectorAll('[data-ends]').forEach((el) => {
+    const left = Number(el.dataset.ends) - now();
+    if (left <= 0) ended = true;
+    el.textContent = fmtTime(Math.max(0, left));
+  });
+  // Re-read for new bids every 10s, and right away when a timer runs out.
+  if (ended || Date.now() - eventsAt > 10e3) { eventsAt = Date.now(); renderEvents(tab); }
 }
 
 // --- Leaderboard ---------------------------------------------------------------
@@ -1442,6 +1565,7 @@ function syncFarm() {
 
 function tick() {
   syncFarm();
+  tickEvents();
   if (tab === 'farm') {
     updatePlots();
     if (hoverPlot !== null) tooltip.innerHTML = plotTooltip(hoverPlot);

@@ -204,3 +204,13 @@ a { color: var(--accent); }
 .prize-row .btn { justify-self: start; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .docs-editor .note { margin-top: 4px; }
+
+/* Auctions & lotteries */
+.ev-grid { grid-template-columns: minmax(300px, 420px) 1fr; align-items: start; }
+@media (max-width: 900px) { .ev-grid { grid-template-columns: 1fr; } }
+.ev-new { display: grid; gap: 10px; }
+.ev-new input[type="text"], .ev-new select, .ev-new input[type="datetime-local"] { width: 100%; }
+.ev-new input[type="datetime-local"] { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.ev-list { display: grid; gap: 10px; }
+.ev-admin { display: grid; gap: 6px; }
+.ev-admin .pill.good { border-color: var(--good); color: var(--good); }

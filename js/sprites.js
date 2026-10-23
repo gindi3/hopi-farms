@@ -315,6 +315,18 @@ const ICONS = {
     p.layer(ell(8, 2.5, 5.4, 1.2), ['#d8bc84', '#9a7a48', '#f2e2b8']);
     p.layer(ell(8, 13.5, 5.4, 1.2), ['#d8bc84', '#9a7a48', '#f2e2b8']);
   },
+  gavel(p) {
+    p.layer(box(3, 12, 12, 14), ['#a06a3a', '#6b4424', '#c88a52']);              // block
+    p.line(6, 9, 11, 4, '#8a5a30'); p.line(7, 9, 11, 5, '#6b4424');              // handle
+    p.layer((x, y) => Math.abs((x - 6) + (y - 5)) <= 1.6 && Math.abs((x - 6) - (y - 5)) <= 3.4,
+      ['#c8a040', '#8a6a20', '#f0d070']);                                         // head
+  },
+  ticket(p) {
+    const m = p.layer(all(box(2, 4, 13, 11), not(ell(2, 7.5, 1.4, 1.4)), not(ell(13, 7.5, 1.4, 1.4))),
+      ['#f2c94c', '#b88a1c', '#fff0a0']);
+    p.within(m, (x, y) => x === 10 && (y % 2 === 0), '#b88a1c');
+    p.within(m, (x, y) => x >= 4 && x <= 8 && (y === 6 || y === 9), '#c06a1e');
+  },
   bush(p) {
     p.layer(any(ell(8, 9, 6.6, 5), ell(5, 7, 3.5, 3), ell(11, 7, 3.5, 3)), ['#4fa040', '#2e6a2c', '#86cc72']);
   },
