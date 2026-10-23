@@ -150,7 +150,8 @@ export function openDb(file) {
     addWithdrawal: db.prepare(`INSERT INTO withdrawals (user_id, wallet, amount, status, day, requested_at)
       VALUES (?, ?, ?, 'pending', ?, ?)`),
     withdrawalsOf: db.prepare('SELECT id, wallet, amount, status, requested_at, decided_at, signature, note FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 50'),
-    requestedOnDay: db.prepare(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id = ? AND day = ? AND status != 'cancelled'`),
+    // Cancelled and declined requests don't use up the day.
+    requestedOnDay: db.prepare(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id = ? AND day = ? AND status NOT IN ('cancelled', 'declined')`),
     withdrawalById: db.prepare('SELECT * FROM withdrawals WHERE id = ?'),
     decideWithdrawal: db.prepare(`UPDATE withdrawals SET status = ?, decided_at = ?, admin = ?, signature = ?, note = ?
       WHERE id = ? AND status = 'pending'`),

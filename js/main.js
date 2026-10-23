@@ -104,12 +104,13 @@ function checkBuild(build) {
 // The server owns prices and odds. When a reply carries a new economy version, fetch the
 // settings, apply them, and redraw so every number on screen matches the server.
 let econ = null;
+let econSyncing = false;
 let cropInfo = null;       // { enabled, mint, treasury } for $CROP deposits
 async function syncEconomy(version) {
   const data = await api('GET', '/economy');
   applyEconomy(data.economy);
   cropInfo = data.crop || null;
-  econ = version || data.econ;
+  econ = version || data.econ;     // only marked current once the new settings are applied
   renderHudCrop();
 }
 
@@ -124,10 +125,14 @@ function renderHudCrop() {
   $('#ca-pill').dataset.copy = mint;
   $('#ca-buy').href = `https://pump.fun/coin/${encodeURIComponent(mint)}`;
 }
+// A failed fetch leaves `econ` on the old version, so the next server reply retries.
 function checkEconomy(version) {
-  if (!version || version === econ || econ === null) return;
-  econ = version;
-  syncEconomy(version).then(() => { if (!spin) refresh(); }).catch(() => { econ = null; });
+  if (!version || version === econ || econ === null || econSyncing) return;
+  econSyncing = true;
+  syncEconomy(version)
+    .then(() => { if (!spin) refresh(); })
+    .catch(() => {})
+    .finally(() => { econSyncing = false; });
 }
 
 // Take the farm (and clock) from a server response.
@@ -393,7 +398,7 @@ async function harvestAll() {
   if (!res) return;
   if (!res.n) return toast('Nothing is ready yet.');
   sfx('harvestAll');
-  toast(`Harvested ${plural(res.n, 'crop')}: +${fmt(res.coins)} $CROP${res.gems ? `, +${res.gems} gems` : ''}`);
+  toast(`Harvested ${plural(res.n, 'crop')}${res.farms > 1 ? ` on ${res.farms} farms` : ''}: +${fmt(res.coins)} $CROP${res.gems ? `, +${res.gems} gems` : ''}`);
   updatePlots();
 }
 

@@ -267,3 +267,22 @@ test('premium produce brews better; a master brew is always Advanced', () => {
   assert.equal(s.produce.dragon_fruit || 0, 0);
   assert.throws(() => G.craft(s, 'elixir', 3), /Epic or Legendary Premium/);
 });
+
+test('harvest all covers every farm, each at its own level, and returns to your farm', async () => {
+  const { applyAction } = await import('../js/actions.js');
+  const s = G.newGame();
+  s.coins = 5000;
+  s.seeds = { potato: 3 };
+  G.plant(s, 0, 'potato', 0);                       // Farm 1, level 0
+  G.openFarm(s);                                    // now on Farm 2
+  G.levelUp(s); G.levelUp(s);                       // Farm 2 → level 2
+  G.plant(s, 0, 'potato', 0);
+  G.plant(s, 1, 'potato', 0);
+  G.switchFarm(s, 0);
+  const r = applyAction(s, { type: 'harvestAll' }, { now: 3 * 3600e3, rng: () => 0.5 });
+  assert.equal(r.n, 3);
+  assert.equal(r.farms, 2);
+  assert.equal(r.coins, G.round2(G.cropPayout('potato', 0) + 2 * G.cropPayout('potato', 2)));
+  assert.equal(s.activeFarm, 0);
+  assert.equal(G.farmList(s).flatMap(f => f.plots.filter(Boolean)).length, 0);
+});

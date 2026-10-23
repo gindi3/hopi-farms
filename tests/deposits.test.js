@@ -264,6 +264,8 @@ test('declining a request refunds the player', async () => {
   assert.equal(r.status, 200);
   assert.equal(await coins(token), start);
   assert.equal((await call('GET', '/api/withdrawals', { token })).data.requests[0].note, 'test');
+  // A declined request doesn't use up the day: the player can ask again.
+  assert.equal((await call('POST', '/api/withdrawals', { token, body: { amount: 5 } })).status, 200);
   // Players can't use admin routes.
   assert.equal((await call('POST', '/api/admin/withdrawals/decline', { token, body: { id } })).status, 403);
 });

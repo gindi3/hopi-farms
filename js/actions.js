@@ -71,15 +71,24 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
     case 'harvest':
       return G.harvest(state, plot, now, rng);
 
+    // Harvest every ready crop on every farm (each at its own farm's level), then return to
+    // the farm the player was on.
     case 'harvestAll': {
-      let n = 0, coins = 0, gems = 0;
-      state.plots.forEach((p, i) => {
-        if (p && G.plotProgress(p, now).ready) {
-          const r = G.harvest(state, i, now, rng);
-          n++; coins += r.coins; gems += r.gems;
-        }
-      });
-      return { n, coins: G.round2(coins), gems };
+      let n = 0, coins = 0, gems = 0, farms = 0;
+      const home = state.activeFarm;
+      for (let f = 0; f < state.farms.length; f++) {
+        G.switchFarm(state, f);
+        let here = 0;
+        state.plots.forEach((p, i) => {
+          if (p && G.plotProgress(p, now).ready) {
+            const r = G.harvest(state, i, now, rng);
+            n++; here++; coins += r.coins; gems += r.gems;
+          }
+        });
+        if (here) farms++;
+      }
+      G.switchFarm(state, home);
+      return { n, coins: G.round2(coins), gems, farms };
     }
 
     case 'finishNow':
