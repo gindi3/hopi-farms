@@ -12,7 +12,8 @@ import { spriteImg } from './sprites.js';
 import { DOCS_GROUPS, DOCS_PAGES, withDocDefaults, pageText, renderMarkdown, renderInline } from './docs-content.js';
 
 const API = (window.HOPI_API || '').replace(/\/$/, '');
-let crop = null;   // { enabled, mint, treasury } from the server
+let crop = null;   // { enabled, mint, treasury, chain links } from the server, when deposits are on
+let chain = { chainName: 'Robinhood Chain', wallets: 'MetaMask, Rabby or another Ethereum wallet', buyName: 'Abyss' };   // until the server says
 let docs = withDocDefaults(null);   // admin-edited text (see docs-content.js)
 
 const $ = (sel) => document.querySelector(sel);
@@ -47,6 +48,7 @@ const INLINE = {
   cropCount: () => fmt(CROPS.length), tierCount: () => fmt(TIERS.length),
   commonMult: () => fmt(RARITY.common.mult), legendaryMult: () => fmt(RARITY.legendary.mult),
   harvestXp: () => TIERS.map(t => `${TIER[t].label} ${TIER[t].xpHarvest}`).join(', '),
+  chainName: () => esc(chain.chainName), walletNames: () => esc(chain.wallets), buyName: () => esc(chain.buyName),
 };
 
 const BLOCK = {
@@ -56,7 +58,8 @@ const BLOCK = {
     ['Game', '<a href="/">hopifarms.fun</a>'],
     ['Docs', '<a href="#introduction">hopifarms.fun/docs</a>'],
     ['$CROP contract', crop?.mint ? `<code class="addr">${esc(crop.mint)}</code>` : '<span class="muted">Shown here once deposits are on</span>'],
-    ['$CROP on pump.fun', crop?.mint ? `<a href="https://pump.fun/coin/${esc(crop.mint)}" target="_blank" rel="noopener noreferrer">pump.fun/coin/${esc(crop.mint.slice(0, 6))}…</a>` : '<span class="muted">Coming soon</span>'],
+    [`Buy $CROP on ${esc(chain.buyName)}`, crop?.buyUrl ? `<a href="${esc(crop.buyUrl)}" target="_blank" rel="noopener noreferrer">${esc(crop.buyUrl.replace(/^https:\/\//, ''))}</a>` : '<span class="muted">Coming soon</span>'],
+    ['Chain', esc(chain.chainName)],
     ['Game wallet (deposits)', crop?.treasury ? `<code class="addr">${esc(crop.treasury)}</code>` : '<span class="muted">Coming soon</span>'],
   ]),
   spendTable: () => table(['Spend on', 'Cost'], [
@@ -202,6 +205,7 @@ async function boot() {
     if (econ) {
       applyEconomy(econ.economy);
       crop = econ.crop?.enabled ? econ.crop : null;
+      if (econ.crop?.chainName) chain = econ.crop;
     }
     if (text) docs = withDocDefaults(text.docs);
   }

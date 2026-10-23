@@ -1,5 +1,6 @@
 // Hopi Farms UI: renders the screens and wires clicks to the rules in game.js.
 
+import { txHref } from './chain-links.js';
 import * as G from './game.js';
 import {
   GAME_NAME, RARITIES, RARITY, TIERS, TIER, CROP, CROPS, ITEMS, HARVEST_GEMS,
@@ -123,7 +124,8 @@ function renderHudCrop() {
   if (!mint) return;
   $('#ca-short').textContent = `${mint.slice(0, 4)}…${mint.slice(-4)}`;
   $('#ca-pill').dataset.copy = mint;
-  $('#ca-buy').href = `https://pump.fun/coin/${encodeURIComponent(mint)}`;
+  $('#ca-buy').href = cropInfo.buyUrl || '#';
+  $('#ca-buy').title = cropInfo.buyName ? `Buy $CROP on ${cropInfo.buyName}` : 'Buy $CROP';
 }
 // A failed fetch leaves `econ` on the old version, so the next server reply retries.
 function checkEconomy(version) {
@@ -791,7 +793,7 @@ async function renderWithdraw() {
   if (tab !== 'withdraw') return;
   let top;
   if (!w.enabled) top = '<p class="muted">Withdrawals aren\'t open yet.</p>';
-  else if (!w.account) top = `<p class="muted">Save your farm with a username first, then link your Solana wallet.</p><div class="actions left"><button class="btn orange" data-action="profile">Save my farm</button></div>`;
+  else if (!w.account) top = `<p class="muted">Save your farm with a username first, then link your ${chainName()} wallet.</p><div class="actions left"><button class="btn orange" data-action="profile">Save my farm</button></div>`;
   else if (!w.wallet) top = `<p class="muted">$CROP is only ever sent to the wallet linked to your farm. Link yours first: it's free and sends nothing.</p><div class="actions left"><button class="btn orange" data-action="link-wallet">Link wallet</button></div>`;
   else if (w.usedToday) {
     const at = new Date(w.nextAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -819,7 +821,7 @@ async function renderWithdraw() {
         <td class="num">${fmt(r.amount)}</td>
         <td><span class="wd-status ${WITHDRAW_STATUS[r.status][1]}">${WITHDRAW_STATUS[r.status][0]}</span>${r.note && r.status === 'declined' ? ` <span class="muted">(${esc(r.note)})</span>` : ''}</td>
         <td>${r.status === 'pending' ? `<button class="btn cream small" data-action="withdraw-cancel" data-id="${r.id}">Cancel</button>`
-          : r.signature ? `<a class="tx-link" href="https://solscan.io/tx/${encodeURIComponent(r.signature)}" target="_blank" rel="noopener noreferrer">View transaction</a>` : ''}</td>
+          : r.signature ? `<a class="tx-link" href="${txHref(r.signature)}" target="_blank" rel="noopener noreferrer">View transaction</a>` : ''}</td>
       </tr>`).join('')}</tbody></table></div>` : '<p class="empty-note">No requests yet.</p>'}`;
 }
 
@@ -965,6 +967,8 @@ function renderHouse() {
 
 const shortAddr = (a) => (a ? `${a.slice(0, 4)}…${a.slice(-4)}` : '');
 
+const chainName = () => cropInfo?.chainName || 'Solana';
+const isEvmChain = () => cropInfo?.chain === 'robinhood';
 function solanaWallet() {
   return window.phantom?.solana || window.solflare || window.solana || null;
 }
@@ -981,12 +985,12 @@ async function renderCropCard() {
   if (!$('#crop-card')) return;
   let bodyHtml;
   if (!w.enabled) {
-    bodyHtml = `<p class="muted">Deposits open soon. You'll be able to send $CROP from your Solana wallet to play with.</p>`;
+    bodyHtml = `<p class="muted">Deposits open soon. You'll be able to send $CROP from your ${chainName()} wallet to play with.</p>`;
   } else if (!w.canLink) {
-    bodyHtml = `<p class="muted">Save your farm with a username first, then link your Solana wallet to deposit $CROP.</p>
+    bodyHtml = `<p class="muted">Save your farm with a username first, then link your ${chainName()} wallet to deposit $CROP.</p>
       <div class="actions"><button class="btn orange" data-action="profile">Save my farm</button></div>`;
   } else if (!w.wallet) {
-    bodyHtml = `<p class="muted">Link your Solana wallet (Phantom or Solflare) to deposit $CROP. Linking only asks you to sign a message: it's free and sends nothing.</p>
+    bodyHtml = `<p class="muted">Link your ${chainName()} wallet (${esc(cropInfo?.wallets || 'Phantom or Solflare')}) to deposit $CROP. Linking only asks you to sign a message: it's free and sends nothing.</p>
       <div class="actions"><button class="btn orange" data-action="link-wallet">Link wallet</button></div>`;
   } else {
     const list = w.deposits.length
@@ -994,7 +998,7 @@ async function renderCropCard() {
       : '<p class="muted">No deposits yet.</p>';
     bodyHtml = `
       <div class="muted">Linked wallet: <b>${esc(shortAddr(w.wallet))}</b></div>
-      <p class="muted" style="margin:0">Send $CROP <b>from your linked wallet</b> to the game wallet below. It shows up in your farm about a minute after Solana confirms the transfer. You can request $CROP back to this wallet once a day from the Withdraw page.</p>
+      <p class="muted" style="margin:0">Send $CROP <b>from your linked wallet</b> to the game wallet below. It shows up in your farm about a minute after ${chainName()} confirms the transfer. You can request $CROP back to this wallet once a day from the Withdraw page.</p>
       <div class="copy-row"><code class="addr">${esc(w.treasury)}</code><button class="btn cream small" data-action="copy" data-copy="${esc(w.treasury)}">Copy</button></div>
       <div class="muted">Token: <code class="addr small">${esc(w.mint)}</code></div>
       ${list}
@@ -1003,7 +1007,27 @@ async function renderCropCard() {
   box.innerHTML = `<div class="row">${spriteImg('coin', 40)}<div><h3 style="margin:0">Deposit $CROP</h3><div class="muted">Your balance: ${fmt(state.coins)} $CROP</div></div></div>${bodyHtml}`;
 }
 
+// Ethereum-style wallets (Robinhood Chain): sign the link message with personal_sign.
+async function linkEvmWallet() {
+  const eth = window.ethereum;
+  if (!eth?.request) return toast('No Ethereum wallet found. Install MetaMask or Rabby, then reload.', true);
+  try {
+    const [address] = await eth.request({ method: 'eth_requestAccounts' });
+    if (!address) throw new Error('no account');
+    const { message } = await api('POST', '/wallet/challenge', { wallet: address });
+    const hex = `0x${[...new TextEncoder().encode(message)].map(b => b.toString(16).padStart(2, '0')).join('')}`;
+    const signature = await eth.request({ method: 'personal_sign', params: [hex, address] });
+    await api('POST', '/wallet/link', { signature });
+    toast(`Wallet ${shortAddr(address)} linked.`);
+    renderCropCard();
+    if (tab === 'withdraw') renderWithdraw();
+  } catch (e) {
+    toast(e instanceof ApiError ? e.message : 'Wallet linking was cancelled.', true);
+  }
+}
+
 async function linkWallet() {
+  if (isEvmChain()) return linkEvmWallet();
   const provider = solanaWallet();
   if (!provider) return toast('No Solana wallet found. Install Phantom or Solflare, then reload.', true);
   try {

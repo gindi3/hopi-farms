@@ -15,7 +15,7 @@ export const DOCS_TOKENS = {
     maxLevel: 'top valley level', levelTotal: '$CROP to reach the top level', baseRtp: 'RTP at level 0', maxRtp: 'RTP at the top level',
     levelBonus: 'payout added per level', firstHarvestGems: 'gems for a first harvest', skipCost: 'gem cost per hour skipped',
     cropCount: 'number of crops', tierCount: 'number of pack tiers', commonMult: 'Common payout ×', legendaryMult: 'Legendary payout ×',
-    harvestXp: 'harvest XP by tier',
+    harvestXp: 'harvest XP by tier', chainName: 'the chain $CROP is on', walletNames: 'wallets that work', buyName: 'where to buy $CROP',
   },
   block: {
     nextCards: 'links to four pages', officialLinks: 'official links table', spendTable: 'what $CROP buys',
@@ -29,7 +29,7 @@ export const DOCS_TOKENS = {
 const page = (id, group, title, icon, lead, body) => ({ id, group, title, icon, lead, body: body.trim() });
 export const DOCS_PAGES = [
   page('introduction', 'Getting Started', 'Introduction', 'farmer',
-    'Hopi Farms is a pixel-art farming game on Solana. Open seed packs, grow crops on your farm and harvest them for $CROP.', `
+    'Hopi Farms is a pixel-art farming game on {{chainName}}. Open seed packs, grow crops on your farm and harvest them for $CROP.', `
 ## What is Hopi Farms?
 You run a little valley. Seed packs from the Market hold a random crop. Plant it, wait for it to grow, then harvest it for $CROP. Rarer crops pay more and some also pay gems.
 
@@ -68,14 +68,14 @@ Level up your valley to open more plots and raise every harvest's payout. Each d
 >! Always check the contract address matches before you buy or send $CROP.`),
 
   page('crop-token', 'The Game', '$CROP', 'coin',
-    '$CROP is the main currency of Hopi Farms: a Solana token, and the balance you spend and earn in the game.', `
+    '$CROP is the main currency of Hopi Farms: a {{chainName}} token, and the balance you spend and earn in the game.', `
 ## What you use it for
 {{spendTable}}
 
 ## How you earn it
 - Harvesting crops. See [Crops & Rarities](#crops) for every payout.
 - The {{starterCrop}} $CROP every new farm starts with.
-- Depositing $CROP from your Solana wallet: **1 $CROP in = 1 $CROP in the game**. See [Deposits](#deposits).
+- Depositing $CROP from your {{chainName}} wallet: **1 $CROP in = 1 $CROP in the game**. See [Deposits](#deposits).
 
 ## Taking it out
 You can ask for $CROP to be sent back to your linked wallet once a day. See [Withdrawals](#withdrawals).
@@ -229,17 +229,17 @@ Winners show on the tab for everyone to see. The team gets in touch to deliver y
 At the top of the screen: **Docs** opens these pages, and **Leaderboard** shows the top farmers by XP.`),
 
   page('deposits', 'Wallet', 'Deposits', 'pack_premium',
-    'Add $CROP from your Solana wallet to play with. 1 $CROP sent = 1 $CROP in the game.', `
+    'Add $CROP from your {{chainName}} wallet to play with. 1 $CROP sent = 1 $CROP in the game.', `
 1. **Create an account.** Guests can't deposit.
-2. **Link your wallet.** Press **Deposit $CROP** in the top right, then **Link wallet**. Phantom or Solflare asks you to sign a message. That's free and sends nothing.
+2. **Link your wallet.** Press **Deposit $CROP** in the top right, then **Link wallet**. Your wallet ({{walletNames}}) asks you to sign a message. That's free and sends nothing.
 3. **Send $CROP from that linked wallet** to the game wallet shown on the deposit screen.
-4. It shows up in your farm about a minute after Solana confirms it.
+4. It shows up in your farm about a minute after {{chainName}} confirms it.
 
 {{gameWallet}}
 
 >! Only send from the wallet you linked. The game finds your deposit by the wallet it came from. If you sent from another wallet by mistake, reach out to the team.
 
->! Only send $CROP. Other tokens and SOL sent to the game wallet are not credited.`),
+>! Only send $CROP on {{chainName}}. Other tokens, coins, or $CROP on another chain sent to the game wallet are not credited.`),
 
   page('withdrawals', 'Wallet', 'Withdrawals', 'coin',
     'Ask for $CROP to be sent back to your linked wallet from the Withdraw page.', `

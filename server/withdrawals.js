@@ -6,17 +6,16 @@
 
 import * as G from '../js/game.js';
 import { STARTER } from '../js/data.js';
-import { base58Decode, parseTransfer } from './solana.js';
 import { dayOf } from './admin.js';
 
 const MIN_AMOUNT = 1;
 
-export function createWithdrawals({ store, ok, bad, loadFarm, config, rpc }) {
+export function createWithdrawals({ store, ok, bad, loadFarm, config, chain, walletOf }) {
   const adminName = (userId) => store.userById(userId)?.username || `#${userId}`;
 
   function info(userId, now) {
     const user = store.userById(userId);
-    const wallet = store.walletOf(userId);
+    const wallet = walletOf(userId);
     const usedToday = store.requestedOnDay(userId, G.dayKey(now)) > 0;
     return {
       enabled: config.enabled,
@@ -138,16 +137,8 @@ export function createWithdrawals({ store, ok, bad, loadFarm, config, rpc }) {
       const w = store.withdrawalById(Number(body?.id));
       if (!w || w.status !== 'pending') return bad('That request is not pending.');
       const signature = String(body?.signature || '').trim();
-      try { if (base58Decode(signature).length !== 64) throw new Error(); } catch { return bad("That isn't a Solana transaction signature."); }
-      let tx;
-      try {
-        tx = await rpc('getTransaction', [signature, { encoding: 'jsonParsed', commitment: 'finalized', maxSupportedTransactionVersion: 0 }]);
-      } catch (e) {
-        return bad(`Couldn't look up that transaction: ${e.message}`);
-      }
-      if (!tx) return bad('That transaction was not found (or not finalized yet). Wait a minute and try again.');
-      const moved = parseTransfer(tx, { mint: config.mint, from: config.treasury, to: w.wallet });
-      if (!moved) return bad("That transaction doesn't send $CROP from the treasury to this player's wallet.");
+      const moved = await chain.checkPayout(signature, w.wallet);
+      if (moved.error) return bad(moved.error);
       if (moved.received + 1e-6 < w.amount) return bad(`That transaction sent ${moved.received} $CROP, less than the ${w.amount} requested.`);
       const now = Date.now();
       try {

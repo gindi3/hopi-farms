@@ -2,6 +2,7 @@
 
 import { RARITIES, RARITY, TIERS, TIER, MAX_LEVEL, CHESTS } from './data.js';
 import { validateEconomy, baseRtpOf } from './economy.js';
+import { txHref, addressHref } from './chain-links.js';
 import { DOCS_PAGES, DOCS_PAGE, DOCS_GROUPS, DOCS_LIMITS, DOCS_TOKENS, validateDocs, pageText } from './docs-content.js';
 
 const TOKEN_KEY = 'hopi-farms-token';
@@ -559,16 +560,16 @@ async function renderDeposits() {
   const d = await api('GET', '/admin/deposits');
   const t = (k) => d.totals[k] || { n: 0, amount: 0, coins: 0 };
   const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-6)}` : '—');
-  const solscan = (sig) => `https://solscan.io/tx/${encodeURIComponent(sig)}`;
   const statusPill = { credited: '<span class="pill good">credited</span>', unmatched: '<span class="pill warn">needs a player</span>' };
   view.innerHTML = `
-    <div class="section-head"><div><h2>$CROP deposits</h2><div class="muted">One way only: $CROP sent to the treasury is added 1:1 to the player's in-game $CROP. Nothing is ever withdrawn, and the server holds no wallet keys.</div></div>
+    <div class="section-head"><div><h2>$CROP deposits</h2><div class="muted">$CROP sent to the treasury on ${esc(d.chainName || 'Solana')} is added 1:1 to the player's in-game $CROP. The server only reads the chain and holds no wallet keys.</div></div>
       <button class="btn" data-dep="scan" ${d.enabled ? '' : 'disabled'}>Check the chain now</button></div>
     ${d.enabled ? '' : `<div class="card" style="margin-bottom:14px"><h3>Deposits are off</h3>
       <p>Set these on the server, then restart the game:</p>
-      <pre class="mono note">HOPI_CROP_MINT=&lt;the $CROP token mint&gt;
+      <pre class="mono note">HOPI_CHAIN=robinhood            (or solana)
+HOPI_CROP_MINT=&lt;the $CROP token address&gt;
 HOPI_TREASURY=&lt;the wallet that receives deposits&gt;
-HOPI_SOLANA_RPC=&lt;optional: your RPC URL, e.g. Helius&gt;</pre></div>`}
+HOPI_EVM_RPC=&lt;optional: your Robinhood Chain RPC URL&gt;</pre></div>`}
     <div class="grid tiles">
       <div class="card tile"><div class="label">$CROP received</div><div class="value">${fmt(t('credited').amount + t('unmatched').amount)}</div><div class="sub">${fmt(t('credited').n + t('unmatched').n, 0)} transfers</div></div>
       <div class="card tile"><div class="label">Credited to players</div><div class="value">${fmt(t('credited').coins)}</div><div class="sub">$CROP from ${fmt(t('credited').n, 0)} deposits</div></div>
@@ -578,7 +579,8 @@ HOPI_SOLANA_RPC=&lt;optional: your RPC URL, e.g. Helius&gt;</pre></div>`}
     <div class="grid">
       <div class="card"><h3>Addresses</h3>
         <dl class="kv">
-          <dt>Token mint</dt><dd class="mono">${d.mint ? esc(d.mint) : '<span class="muted">not set</span>'}</dd>
+          <dt>Chain</dt><dd>${esc(d.chainName || 'Solana')}${d.chainId ? ` (chain ID ${d.chainId})` : ''}</dd>
+          <dt>Token</dt><dd class="mono">${d.mint ? esc(d.mint) : '<span class="muted">not set</span>'}</dd>
           <dt>Treasury</dt><dd class="mono">${d.treasury ? esc(d.treasury) : '<span class="muted">not set</span>'}</dd>
           <dt>RPC</dt><dd class="mono">${esc(d.rpc)}</dd>
         </dl>
@@ -594,7 +596,7 @@ HOPI_SOLANA_RPC=&lt;optional: your RPC URL, e.g. Helius&gt;</pre></div>`}
           ? `<form class="row" data-assign="${esc(r.signature)}" style="flex-wrap:nowrap"><input name="username" placeholder="username" style="width:120px" required><button class="btn" type="submit">Credit</button></form>`
           : '—'}</td>
         <td>${statusPill[r.status] || esc(r.status)}</td>
-        <td><a class="mono" href="${solscan(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No deposits yet.</td></tr>'}</tbody>
+        <td><a class="mono" href="${txHref(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No deposits yet.</td></tr>'}</tbody>
     </table></div></div>`;
   view.querySelectorAll('form[data-assign]').forEach(f => f.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -640,7 +642,7 @@ async function renderWithdrawals() {
             <input name="signature" placeholder="Transaction ID" style="width:200px" required>
             <button class="btn primary" type="submit">Mark as sent</button>
             <button class="btn danger" type="button" data-wd-decline="${r.id}" data-amount="${r.amount}" data-user="${esc(r.username)}">Decline</button>
-          </form>` : r.signature ? `<a class="mono" href="https://solscan.io/tx/${encodeURIComponent(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a>${r.admin ? ` <span class="muted">by ${esc(r.admin)}</span>` : ''}` : (r.admin ? `<span class="muted">by ${esc(r.admin)}</span>` : '')}</td>
+          </form>` : r.signature ? `<a class="mono" href="${txHref(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a>${r.admin ? ` <span class="muted">by ${esc(r.admin)}</span>` : ''}` : (r.admin ? `<span class="muted">by ${esc(r.admin)}</span>` : '')}</td>
       </tr>`).join('') || '<tr><td colspan="6" class="muted">No requests yet.</td></tr>'}</tbody>
     </table></div></div>
     <div class="card" id="wd-player"><p class="muted">Click a player's name to see their deposits, withdrawals and play before you pay.</p></div>
@@ -677,7 +679,7 @@ async function renderWdPlayer(id) {
   box.innerHTML = `
     <h2>${esc(p.name)}</h2>
     <div class="muted">@${esc(p.username || 'guest')} · id ${p.id} · joined ${new Date(p.createdAt).toLocaleDateString()} (${ago(p.createdAt)}) · active ${ago(p.lastActive)}</div>
-    <div class="muted mono" style="margin-top:4px">Wallet ${p.wallet ? `<a href="https://solscan.io/account/${encodeURIComponent(p.wallet)}" target="_blank" rel="noopener noreferrer" title="${esc(p.wallet)}">${esc(short(p.wallet))}</a>` : 'not linked'}</div>
+    <div class="muted mono" style="margin-top:4px">Wallet ${p.wallet ? `<a href="${addressHref(p.wallet)}" target="_blank" rel="noopener noreferrer" title="${esc(p.wallet)}">${esc(short(p.wallet))}</a>` : 'not linked'}</div>
 
     <h3 style="margin-top:14px">Money in vs. out</h3>
     <dl class="kv">
@@ -705,11 +707,11 @@ async function renderWdPlayer(id) {
 
     <h3 style="margin-top:14px">Withdrawal requests</h3>
     ${d.withdrawals.length ? `<table><tbody>${d.withdrawals.map(w => `<tr><td>${new Date(w.requested_at).toLocaleDateString()}</td><td class="num">${fmt(w.amount)}</td>
-      <td><span class="pill ${wdPill[w.status] || ''}">${esc(w.status)}</span></td><td>${w.signature ? `<a class="mono" href="https://solscan.io/tx/${encodeURIComponent(w.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(w.signature))}</a>` : esc(w.note || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>'}
+      <td><span class="pill ${wdPill[w.status] || ''}">${esc(w.status)}</span></td><td>${w.signature ? `<a class="mono" href="${txHref(w.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(w.signature))}</a>` : esc(w.note || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>'}
 
     <h3 style="margin-top:14px">Deposits</h3>
     ${d.deposits.length ? `<table><tbody>${d.deposits.map(x => `<tr><td>${new Date(x.time).toLocaleDateString()}</td><td class="num">${fmt(x.amount)} $CROP</td>
-      <td><a class="mono" href="https://solscan.io/tx/${encodeURIComponent(x.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(x.signature))}</a></td></tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>'}`;
+      <td><a class="mono" href="${txHref(x.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(x.signature))}</a></td></tr>`).join('')}</tbody></table>` : '<p class="muted">None.</p>'}`;
   document.querySelectorAll('[data-wd-player]').forEach(b => b.closest('tr').classList.toggle('sel', Number(b.dataset.wdPlayer) === id));
 }
 

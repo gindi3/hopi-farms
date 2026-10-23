@@ -1,30 +1,23 @@
-// One-way $CROP deposits: a player links their Solana wallet by signing a message, then any
-// $CROP they send from it to the treasury is added 1:1 to their in-game $CROP balance.
-// Nothing is ever sent out, so the server holds no private keys.
-//
-// Env: HOPI_CROP_MINT (token mint), HOPI_TREASURY (wallet that receives deposits),
-//      HOPI_SOLANA_RPC (defaults to the public mainnet RPC; a provider like Helius is better).
+// $CROP deposits: a player links their wallet by signing a message, then any $CROP they send
+// from it to the treasury is added 1:1 to their in-game $CROP balance. The server only reads
+// the chain and holds no private keys. Which chain (Solana or Robinhood Chain) and the env
+// settings are described in chains.js.
 
 import { randomBytes } from 'node:crypto';
 import * as G from '../js/game.js';
-import { base58Decode, isAddress, linkMessage, rpcClient, scanDeposits, verifyWalletSignature } from './solana.js';
+import { linkMessage } from './solana.js';
+import { chainConfig, chainOps } from './chains.js';
 import { dayOf } from './admin.js';
 
 const CHALLENGE_MS = 10 * 60e3;
 
-export function depositConfig(env = process.env) {
-  const mint = (env.HOPI_CROP_MINT || '').trim();
-  const treasury = (env.HOPI_TREASURY || '').trim();
-  return {
-    mint,
-    treasury,
-    rpcUrl: (env.HOPI_SOLANA_RPC || 'https://api.mainnet-beta.solana.com').trim(),
-    enabled: isAddress(mint) && isAddress(treasury),
-  };
-}
+export const depositConfig = chainConfig;
 
 export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpcOverride, pollMs = 30e3 }) {
-  const rpc = rpcOverride || rpcClient(config.rpcUrl);
+  const chain = chainOps(config, rpcOverride, store);
+  const { rpc } = chain;
+  // A wallet linked on another chain (before a switch) doesn't count: the player links again.
+  const walletOf = (userId) => { const w = store.walletOf(userId); return w && chain.isAddress(w) ? w : null; };
   const challenges = new Map();      // userId → { wallet, message, expires }
   const status = { lastScan: null, lastError: null, scanning: false };
 
@@ -47,7 +40,7 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
         store.addDeposit({ ...dep, wallet: dep.from, coins: 0, userId: null, status: 'ignored', notedAt: now });
         return;
       }
-      const user = dep.from ? store.userByWallet(dep.from) : null;
+      const user = dep.from ? store.userByWallet(chain.normalize(dep.from)) : null;
       if (!user) {
         store.addDeposit({ ...dep, wallet: dep.from, coins: 0, userId: null, status: 'unmatched', notedAt: now });
         log.info?.(`Unmatched deposit ${dep.amount} $CROP from ${dep.from || 'unknown'} (${dep.signature})`);
@@ -63,7 +56,7 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
     if (!config.enabled || status.scanning) return 0;
     status.scanning = true;
     try {
-      const n = await scanDeposits({ rpc, mint: config.mint, treasury: config.treasury, seen: store.hasDeposit, record });
+      const n = await chain.scan({ seen: store.hasDeposit, record });
       status.lastScan = Date.now();
       status.lastError = null;
       return n;
@@ -89,12 +82,13 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
     enabled: config.enabled,
     mint: config.enabled ? config.mint : null,
     treasury: config.enabled ? config.treasury : null,
+    ...chain.links,
   });
 
   const routes = {
     'GET /api/wallet': (req, { userId }) => ok({
       ...publicInfo(),
-      wallet: store.walletOf(userId),
+      wallet: walletOf(userId),
       canLink: Boolean(store.userById(userId)?.username),
       deposits: store.depositsOf(userId),
     }),
@@ -104,8 +98,8 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
       if (!config.enabled) return bad('Deposits are not open yet.');
       const user = store.userById(userId);
       if (!user?.username) return bad('Save your farm with a username before linking a wallet.');
-      const wallet = String(body?.wallet || '');
-      if (!isAddress(wallet)) return bad("That isn't a Solana wallet address.");
+      const wallet = chain.normalize(body?.wallet);
+      if (!chain.isAddress(wallet)) return bad(`That isn't a ${chain.links.chainName} wallet address.`);
       if (wallet === config.treasury) return bad("That's the game's treasury wallet.");
       const owner = store.userByWallet(wallet);
       if (owner && owner.id !== userId) return bad('That wallet is already linked to another farm.');
@@ -118,14 +112,7 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
     'POST /api/wallet/link': (req, { userId, body }) => {
       const c = challenges.get(userId);
       if (!c || c.expires < Date.now()) return bad('That request expired. Try linking again.');
-      let signature;
-      try {
-        const s = String(body?.signature || '');
-        signature = /^[A-Za-z0-9+/=]+$/.test(s) && s.length > 80 ? Buffer.from(s, 'base64') : base58Decode(s);
-      } catch {
-        return bad("That signature couldn't be read.");
-      }
-      if (!verifyWalletSignature(c.wallet, c.message, signature)) return bad("The signature doesn't match that wallet.");
+      if (!chain.verify(c.wallet, c.message, String(body?.signature || ''))) return bad("The signature doesn't match that wallet.");
       const owner = store.userByWallet(c.wallet);
       if (owner && owner.id !== userId) return bad('That wallet is already linked to another farm.');
       challenges.delete(userId);
@@ -170,5 +157,5 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
     },
   };
 
-  return { routes, adminRoutes, start, stop, scan, record, publicInfo, rpc };
+  return { routes, adminRoutes, start, stop, scan, record, publicInfo, rpc, chain, walletOf };
 }

@@ -213,7 +213,8 @@ export function createServer({
   const withdrawals = createWithdrawals({
     store, ok, bad, loadFarm,
     config: depositOpts.config || depositConfig(),
-    rpc: deposits.rpc,
+    chain: deposits.chain,
+    walletOf: deposits.walletOf,
   });
   Object.assign(routes, withdrawals.routes);
   const events = createEvents({ store, ok, bad, loadFarm, log });
