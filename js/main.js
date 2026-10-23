@@ -1221,6 +1221,7 @@ async function submitForm(form) {
       adopt(await api('POST', '/register', data));
       toast(`Farm saved as ${user.username}.`);
       closeModal();
+      showIntro();
     } else if (kind === 'login') {
       const res = await api('POST', '/login', data);
       storeToken(res.token);
@@ -1301,6 +1302,8 @@ document.addEventListener('click', (e) => {
     case 'rename':
     case 'profile': return openProfile();
     case 'profile-login': return openProfile('login');
+    case 'welcome': return showWelcome(el.dataset.mode);
+    case 'play-guest': skipWelcome(); closeModal(); return showIntro();
     case 'logout': return logout();
     case 'plant':
       return dispatch({ type: 'plant', plot: Number(plot), cropId: crop }).then(r => { if (r) { sfx('plant'); closeModal(); refresh(); } });
@@ -1452,6 +1455,40 @@ function tick() {
   renderHeader();
 }
 
+// Signed-out visitors (guests) get a sign-up / sign-in prompt when they open the site.
+// "Play as guest" hides it for the rest of this browser tab's visit.
+const WELCOME_KEY = 'hopi-farms-welcome-skipped';
+function welcomeSkipped() { try { return sessionStorage.getItem(WELCOME_KEY) === '1'; } catch { return false; } }
+function skipWelcome() { try { sessionStorage.setItem(WELCOME_KEY, '1'); } catch { /* storage unavailable */ } }
+
+function showWelcome(mode = 'register') {
+  const tabs = `
+    <div class="auth-tabs">
+      <button class="btn ${mode === 'register' ? 'orange' : 'cream'}" type="button" data-action="welcome" data-mode="register">Create account</button>
+      <button class="btn ${mode === 'login' ? 'orange' : 'cream'}" type="button" data-action="welcome" data-mode="login">Sign in</button>
+    </div>`;
+  const form = mode === 'login' ? `
+    <form class="form" data-form="login">
+      <label>Username<input name="username" autocomplete="username" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn orange" type="submit">Sign in</button>
+    </form>` : `
+    <form class="form" data-form="register">
+      <p class="muted">Make an account to keep your farm, deposit $CROP and play on any device.</p>
+      <label>Username<input name="username" autocomplete="username" pattern="[A-Za-z0-9_]{3,20}" title="3–20 letters, numbers or underscores" required></label>
+      <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn orange" type="submit">Create account</button>
+    </form>`;
+  openModal(`
+    <h3>Welcome to ${GAME_NAME}!</h3>
+    <div class="reveal">
+      <img class="px intro-logo" src="brand/logo-transparent.svg" width="104" height="128" alt="The Hopi Farms farmer" draggable="false">
+    </div>
+    ${tabs}${form}
+    <p class="auth-guest"><button class="link" type="button" data-action="play-guest">Just look around as a guest</button></p>`);
+  modalPanel.querySelector('input')?.focus();
+}
+
 function showIntro() {
   if (state.seenIntro) return;
   dispatch({ type: 'seenIntro' });
@@ -1508,7 +1545,8 @@ async function boot() {
   }
   renderHeader();
   setTab('valley');
-  showIntro();
+  if (ONLINE && user?.guest && !welcomeSkipped()) showWelcome();
+  else showIntro();
 }
 
 document.addEventListener('click', (e) => { if (e.target.closest('[data-action="retry"]')) boot(); });

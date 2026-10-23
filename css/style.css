@@ -785,3 +785,9 @@ a.tx-link { color: #3a4a9a; }
 .brew-tag.premium { background: var(--c-rare); }
 .brew-tag.master { background: var(--c-legendary); }
 .recipe.premium, .recipe.master { border-top: 2px dashed #dcc69a; }
+
+/* Sign-up / sign-in prompt for signed-out visitors */
+.auth-tabs { display: flex; gap: 8px; justify-content: center; margin: 4px 0 12px; }
+.auth-guest { text-align: center; margin: 12px 0 0; }
+.link { background: none; border: 0; padding: 0; font: inherit; font-size: 16px; color: var(--ink-soft); text-decoration: underline; cursor: pointer; }
+.link:hover { color: inherit; }
