@@ -75,8 +75,12 @@ export function createServer({
     return { username: u?.username ?? null, guest: !u?.username };
   }
 
+  // Behind Cloudflare (tunnel or proxy) the visitor's IP arrives in a header. Only trust it
+  // when the server is reachable through that proxy alone (HOPI_TRUST_PROXY=1, bound to 127.0.0.1).
   function clientIp(req) {
     if (trustProxy) {
+      const cf = String(req.headers['cf-connecting-ip'] || '').trim();
+      if (cf) return cf;
       const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
       if (fwd) return fwd;
     }

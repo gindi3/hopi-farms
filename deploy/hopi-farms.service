@@ -12,7 +12,7 @@ WorkingDirectory=/opt/hopi-farms
 ExecStart=@NODE@ --disable-warning=ExperimentalWarning server/index.js
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
-Environment=PORT=5180
+Environment=PORT=5190
 Environment=HOPI_DB=/var/lib/hopi-farms/hopi.db
 Environment=HOPI_TRUST_PROXY=1
 Restart=always

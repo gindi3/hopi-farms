@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
-# One-time setup of Hopi Farms on an Ubuntu/Debian droplet. Safe to re-run.
+# One-time setup of Hopi Farms on the droplet. Safe to re-run.
 #
 #   curl -fsSL https://raw.githubusercontent.com/gindi3/hopi-farms/main/deploy/setup.sh -o setup.sh
 #   sudo bash setup.sh
 #
-# What it does (and nothing else on the server):
+# The droplet serves sites through a Cloudflare Tunnel (cloudflared), not nginx, so nothing
+# here opens ports or needs certificates. What it does:
 #   - creates a 'hopi' system user that runs the game
 #   - uses Node 22.13+ if installed, otherwise installs a private copy in /opt/hopi-node
-#     (so other apps on the droplet keep their own Node)
 #   - clones the game to /opt/hopi-farms
-#   - installs and starts the hopi-farms systemd service on 127.0.0.1:5180
+#   - installs and starts the hopi-farms service on 127.0.0.1:5190
 #   - installs a daily database backup timer
-#   - adds an nginx site for hopifarms.fun (other nginx sites are left alone)
+#   - adds hopifarms.fun to the existing tunnel config, ahead of the catch-all rule, so other
+#     sites on the tunnel keep working (the old config is backed up and restored on failure)
 set -euo pipefail
 
 REPO=https://github.com/gindi3/hopi-farms.git
 APP=/opt/hopi-farms
 NODE_DIR=/opt/hopi-node
-CERT_DIR=/etc/ssl/hopifarms
+PORT=5190
+HOSTS=(hopifarms.fun www.hopifarms.fun)
+TUNNEL_CONFIG=/etc/cloudflared/config.yml
 
 say() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31mStopped: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -26,13 +29,12 @@ die() { printf '\n\033[1;31mStopped: %s\033[0m\n' "$*" >&2; exit 1; }
 command -v apt-get >/dev/null || die "this script expects Ubuntu or Debian."
 
 # --- Packages ------------------------------------------------------------------
-say "Installing git, curl and nginx if missing"
 NEED=()
 command -v git >/dev/null || NEED+=(git)
 command -v curl >/dev/null || NEED+=(curl)
-command -v nginx >/dev/null || NEED+=(nginx)
 command -v xz >/dev/null || NEED+=(xz-utils)
 if [ ${#NEED[@]} -gt 0 ]; then
+  say "Installing ${NEED[*]}"
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${NEED[@]}"
 fi
@@ -84,6 +86,10 @@ say "Running the game's tests"
 grep -E '^ℹ (pass|fail)' /tmp/hopi-tests.log || true
 
 # --- systemd -------------------------------------------------------------------------
+if ss -ltnH "sport = :$PORT" | grep -q . && ! systemctl is-active --quiet hopi-farms; then
+  die "port $PORT is already used by something else on this server"
+fi
+
 say "Installing the hopi-farms service and daily backups"
 for unit in hopi-farms.service hopi-farms-backup.service hopi-farms-backup.timer; do
   sed "s#@NODE@#$NODE#g" "$APP/deploy/$unit" > "/etc/systemd/system/$unit"
@@ -93,59 +99,64 @@ systemctl enable --now hopi-farms.service
 systemctl restart hopi-farms.service
 systemctl enable --now hopi-farms-backup.timer
 
-for i in $(seq 1 20); do
-  curl -fsS http://127.0.0.1:5180/api/leaderboard >/dev/null 2>&1 && break
+for _ in $(seq 1 20); do
+  curl -fsS "http://127.0.0.1:$PORT/api/leaderboard" >/dev/null 2>&1 && break
   sleep 0.5
 done
-curl -fsS http://127.0.0.1:5180/api/leaderboard >/dev/null \
+curl -fsS "http://127.0.0.1:$PORT/api/leaderboard" >/dev/null \
   || die "the game server didn't start; see: journalctl -u hopi-farms -n 50"
-echo "Game server is running on 127.0.0.1:5180"
+echo "Game server is running on 127.0.0.1:$PORT"
 
-# --- nginx -----------------------------------------------------------------------------
-say "Configuring nginx for hopifarms.fun"
-mkdir -p /etc/nginx/snippets
-{
-  echo "# Cloudflare edge IPs, from https://www.cloudflare.com/ips/ (refreshed by setup.sh)."
-  for ip in $(curl -fsSL https://www.cloudflare.com/ips-v4) $(curl -fsSL https://www.cloudflare.com/ips-v6); do
-    echo "set_real_ip_from $ip;"
+# --- Cloudflare Tunnel ---------------------------------------------------------------
+say "Adding hopifarms.fun to the Cloudflare Tunnel"
+[ -f "$TUNNEL_CONFIG" ] || die "no tunnel config at $TUNNEL_CONFIG"
+command -v cloudflared >/dev/null || die "cloudflared isn't installed"
+TUNNEL_UNIT="$(systemctl list-units --type=service --all --no-legend --plain | awk '{print $1}' \
+  | while read -r u; do systemctl cat "$u" 2>/dev/null | grep -q "cloudflared.*$TUNNEL_CONFIG" && echo "$u"; done | head -1)"
+[ -n "$TUNNEL_UNIT" ] || die "couldn't find the systemd service that runs the tunnel"
+TUNNEL_ID="$(awk '/^tunnel:/{print $2}' "$TUNNEL_CONFIG")"
+
+if grep -q "hostname: hopifarms.fun" "$TUNNEL_CONFIG"; then
+  echo "hopifarms.fun is already in $TUNNEL_CONFIG"
+else
+  BACKUP="$TUNNEL_CONFIG.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$TUNNEL_CONFIG" "$BACKUP"
+  echo "Backed up the tunnel config to $BACKUP"
+  RULES=""
+  for h in "${HOSTS[@]}"; do
+    RULES+="  - hostname: $h\n    service: http://localhost:$PORT\n"
   done
-  echo "real_ip_header CF-Connecting-IP;"
-} > /etc/nginx/snippets/cloudflare-realip.conf
-
-if [ ! -s "$CERT_DIR/origin.pem" ] || [ ! -s "$CERT_DIR/origin.key" ]; then
-  mkdir -p "$CERT_DIR" && chmod 700 "$CERT_DIR"
-  cat <<MSG
-
-The game is running, but nginx needs the Cloudflare Origin Certificate before
-hopifarms.fun can be served. In Cloudflare: SSL/TLS → Origin Server → Create
-Certificate (keep the defaults), then on this server:
-
-  sudo nano $CERT_DIR/origin.pem   # paste the Origin Certificate
-  sudo nano $CERT_DIR/origin.key   # paste the Private Key
-  sudo chmod 600 $CERT_DIR/origin.key
-
-Then run this script again.
-MSG
-  exit 0
+  # Insert our rules right after 'ingress:', so they come before the catch-all rule.
+  awk -v rules="$RULES" '{print} /^ingress:[[:space:]]*$/ && !done {printf "%s", rules; done=1}' \
+    "$BACKUP" > "$TUNNEL_CONFIG.new"
+  grep -q "hostname: hopifarms.fun" "$TUNNEL_CONFIG.new" || { rm -f "$TUNNEL_CONFIG.new"; die "couldn't find 'ingress:' in $TUNNEL_CONFIG"; }
+  if ! cloudflared tunnel --config "$TUNNEL_CONFIG.new" ingress validate; then
+    rm -f "$TUNNEL_CONFIG.new"
+    die "the new tunnel config didn't validate; nothing was changed"
+  fi
+  mv "$TUNNEL_CONFIG.new" "$TUNNEL_CONFIG"
+  echo "Restarting $TUNNEL_UNIT (other sites on the tunnel blink for a second or two)"
+  systemctl restart "$TUNNEL_UNIT"
+  sleep 3
+  if ! systemctl is-active --quiet "$TUNNEL_UNIT"; then
+    cp -p "$BACKUP" "$TUNNEL_CONFIG"
+    systemctl restart "$TUNNEL_UNIT"
+    die "the tunnel didn't come back with the new config, so the old one was restored"
+  fi
 fi
-chmod 600 "$CERT_DIR/origin.key"
-
-cp "$APP/deploy/nginx-hopifarms.conf" /etc/nginx/sites-available/hopifarms.fun
-ln -sf /etc/nginx/sites-available/hopifarms.fun /etc/nginx/sites-enabled/hopifarms.fun
-nginx -t || die "nginx rejected the config (nothing was reloaded)"
-systemctl reload nginx
-
-if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
-  ufw allow 'Nginx Full' >/dev/null && echo "Opened ports 80 and 443 in ufw"
-fi
+cloudflared tunnel --config "$TUNNEL_CONFIG" ingress rule https://hopifarms.fun | grep -q ":$PORT" \
+  || die "the tunnel isn't routing hopifarms.fun to port $PORT"
+echo "Tunnel routes hopifarms.fun → 127.0.0.1:$PORT"
 
 say "Done"
 cat <<MSG
-Check it:
+Last step, in Cloudflare (hopifarms.fun → DNS → Records):
+  delete any A, AAAA or CNAME records named hopifarms.fun or www, then add:
+    CNAME  @    $TUNNEL_ID.cfargotunnel.com   Proxied
+    CNAME  www  $TUNNEL_ID.cfargotunnel.com   Proxied
+
+Check it once Cloudflare says the domain is Active:
   curl -sI https://hopifarms.fun | head -1     # expect HTTP/2 200
   systemctl status hopi-farms                   # game server
   journalctl -u hopi-farms -f                   # live logs
-  ls /var/lib/hopi-farms/backups                # daily backups (after the first run)
-
-To ship updates later, run deploy/deploy.sh from your computer.
 MSG
