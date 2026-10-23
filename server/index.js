@@ -50,7 +50,7 @@ const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
 // deploy gets fresh URLs and no browser or CDN cache can serve stale code.
 export function computeBuild(root = ROOT) {
   const hash = createHash('sha256');
-  const files = ['index.html', 'admin.html'];
+  const files = ['index.html', 'admin.html', 'docs.html'];
   for (const dir of STATIC_DIRS) {
     for (const name of readdirSync(join(root, dir)).sort()) files.push(`${dir}/${name}`);
   }
@@ -259,7 +259,7 @@ export function createServer({
         if (file.status === 200 && v[1] === build) file.cache = 'public, max-age=31536000, immutable';
         return send(res, file);
       }
-      const pages = { '/': 'index.html', '/index.html': 'index.html', '/admin': 'admin.html', '/admin.html': 'admin.html' };
+      const pages = { '/': 'index.html', '/index.html': 'index.html', '/admin': 'admin.html', '/admin.html': 'admin.html', '/docs': 'docs.html', '/docs.html': 'docs.html' };
       if (pages[url.pathname]) {
         const page = await staticFile(`/${pages[url.pathname]}`);
         page.body = String(page.body)
@@ -335,7 +335,7 @@ function readJson(req) {
 async function staticFile(pathname) {
   let rel = pathname === '/' ? 'index.html' : normalize(decodeURIComponent(pathname)).replace(/^[/\\]+/, '');
   const top = rel.split(/[/\\]/)[0];
-  if (rel !== 'index.html' && rel !== 'admin.html' && !STATIC_DIRS.has(top)) return bad('Not found.', 404);
+  if (!['index.html', 'admin.html', 'docs.html'].includes(rel) && !STATIC_DIRS.has(top)) return bad('Not found.', 404);
   const file = join(ROOT, rel);
   if (!file.startsWith(ROOT + '/')) return bad('Not found.', 404);
   const type = TYPES[extname(file)];
