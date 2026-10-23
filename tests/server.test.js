@@ -300,3 +300,35 @@ test('economy saved before new fields existed still loads, keeping its custom va
   assert.equal(filled.firstHarvestGems, 7);
   assert.equal(filled.farmCost, DEFAULT_ECONOMY.farmCost);
 });
+
+test('admin can edit the docs; everyone reads them; bad edits are refused', async () => {
+  const admin = await adminToken();
+  const g = await guest();
+  const pub = await call('GET', '/api/docs');
+  assert.equal(pub.status, 200);
+  assert.match(pub.data.docs.prizes[0].value, /\$349/);
+  assert.equal((await call('POST', '/api/admin/docs', { token: g.token, body: { docs: pub.data.docs } })).status, 403);
+
+  const docs = structuredClone(pub.data.docs);
+  docs.pages.faq = { title: 'Questions', extra: '## More\n'.padEnd(12000, 'x') };   // bigger than the usual body limit
+  docs.custom.push({ id: 'x-rules', group: 'Help', title: 'Prize rules', body: 'Top 3 win.' });
+  docs.prizes[0].image = 'javascript:alert(1)';
+  const refused = await call('POST', '/api/admin/docs', { token: admin, body: { docs } });
+  assert.equal(refused.status, 400);
+  assert.match(refused.data.error, /https/);
+
+  docs.prizes[0].image = '';
+  const saved = await call('POST', '/api/admin/docs', { token: admin, body: { docs } });
+  assert.equal(saved.status, 200);
+  const after = (await call('GET', '/api/docs')).data.docs;
+  assert.equal(after.pages.faq.title, 'Questions');
+  assert.equal(after.custom[0].title, 'Prize rules');
+});
+
+test('docs Markdown escapes HTML and only links to safe places', async () => {
+  const { renderMarkdown } = await import('../js/docs-content.js');
+  const html = renderMarkdown('<img src=x onerror=alert(1)> [x](javascript:alert(1)) **b**');
+  assert.ok(!html.includes('<img src=x'));
+  assert.ok(!html.includes('javascript:'));
+  assert.ok(html.includes('<b>b</b>'));
+});

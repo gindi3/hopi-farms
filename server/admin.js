@@ -7,6 +7,7 @@ import {
   snapshotEconomy, applyEconomy, validateEconomy, baseRtpOf, DEFAULT_ECONOMY,
 } from '../js/economy.js';
 import { cleanName } from '../js/actions.js';
+import { validateDocs, withDocDefaults, DEFAULT_DOCS } from '../js/docs-content.js';
 
 const DAY_MS = 86400e3;
 export const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
@@ -209,6 +210,20 @@ export function adminRoutes({ store, ok, bad, loadFarm, onEconomyChange }) {
       store.addLog(adminName(userId), 'reset economy', diffEconomy(prev, DEFAULT_ECONOMY), Date.now());
       onEconomyChange();
       return ok({ economy: snapshotEconomy() });
+    },
+
+    // Docs text (/docs): page titles and intros, extra text, prizes and custom pages.
+    'GET /api/admin/docs': () => ok({ docs: withDocDefaults(store.getSetting('docs')), defaults: DEFAULT_DOCS }),
+
+    'POST /api/admin/docs': (req, { userId, body }) => {
+      const next = body?.docs;
+      const errors = validateDocs(next);
+      if (errors.length) return bad(errors.join(' '));
+      const prev = withDocDefaults(store.getSetting('docs'));
+      store.putSetting('docs', next);
+      const changed = ['pages', 'prizes', 'prizeNote', 'custom'].filter(k => JSON.stringify(prev[k]) !== JSON.stringify(next[k]));
+      store.addLog(adminName(userId), 'edit docs', changed.length ? [`changed: ${changed.join(', ')}`] : ['no changes'], Date.now());
+      return ok({ docs: withDocDefaults(next) });
     },
 
     'GET /api/admin/log': () => ok({ log: store.recentLog(100) }),

@@ -9,9 +9,11 @@ import {
 import * as G from './game.js';
 import { applyEconomy } from './economy.js';
 import { spriteImg } from './sprites.js';
+import { DOCS_GROUPS, withDocDefaults, renderMarkdown } from './docs-content.js';
 
 const API = (window.HOPI_API || '').replace(/\/$/, '');
 let crop = null;   // { enabled, mint, treasury } from the server
+let docs = withDocDefaults(null);   // admin-edited text (see docs-content.js)
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33,7 +35,7 @@ const link = (id, text) => `<a href="#${id}">${text}</a>`;
 
 // --- Pages -------------------------------------------------------------------
 
-const PAGES = [
+const BUILT_IN = [
   { group: 'Getting Started', id: 'introduction', title: 'Introduction', icon: 'farmer', render: () => `
     <p class="lead">${GAME_NAME} is a pixel-art farming game on Solana. Open seed packs, grow crops on your farm and harvest them for $CROP.</p>
     <h2 id="what">What is ${GAME_NAME}?</h2>
@@ -48,7 +50,7 @@ const PAGES = [
     ${hint(`Playing as a guest? Your farm lives in that browser only. Create an account from your profile to keep it and play on any device. You need an account to deposit or withdraw $CROP.`)}
     <h2 id="read-next">Where to next</h2>
     <div class="cards">
-      ${['game-loop', 'seed-packs', 'leaderboard', 'crop-token'].map(id => { const p = PAGE[id]; return `<a class="card" href="#${id}">${icon(p.icon, 32)}<span>${p.title}</span></a>`; }).join('')}
+      ${['game-loop', 'seed-packs', 'leaderboard', 'crop-token'].filter(id => PAGE[id]).map(id => { const p = PAGE[id]; return `<a class="card" href="#${id}">${icon(p.icon, 32)}<span>${p.title}</span></a>`; }).join('')}
     </div>` },
 
   { group: 'Getting Started', id: 'game-loop', title: 'Game Loop', icon: 'stage:3', render: () => `
@@ -231,16 +233,17 @@ const PAGES = [
     ])}
     <p>Fertilizer adds up to +8% XP on a harvest.</p>
     <h2 id="prizes">Prizes</h2>
-    <p>Top farmers win real prizes, like this graded Pokémon card:</p>
+    ${docs.prizes.length ? `<p>Top farmers win real prizes, like ${docs.prizes.length === 1 ? 'this one' : 'these'}:</p>
+    ${docs.prizes.map(p => `
     <div class="prize">
-      <div class="prize-art" aria-hidden="true"><small>PSA</small><b>10</b><small>GEM MT</small></div>
+      <div class="prize-art" aria-hidden="true">${p.image ? `<img src="${esc(p.image)}" alt="">` : icon('chest_gold', 48)}</div>
       <div>
-        <b>2023 Paldea Evolved Baxcalibur #210</b>
-        <p>Illustration Rare · PSA 10 Gem Mint</p>
-        <p class="value">Fair market value: $349</p>
+        <b>${esc(p.name)}</b>
+        ${p.detail ? `<p>${esc(p.detail)}</p>` : ''}
+        ${p.value ? `<p class="value">${esc(p.value)}</p>` : ''}
       </div>
-    </div>
-    ${hint('Prize rounds, winner counts and dates are announced on our official channels. Check them for the current prize.')}` },
+    </div>`).join('')}` : '<p>Prizes for top farmers will be announced soon.</p>'}
+    ${docs.prizeNote ? hint(esc(docs.prizeNote)) : ''}` },
 
   { group: 'The Game', id: 'locations', title: 'The Valley', icon: 'chest_wooden', render: () => `
     <p class="lead">Tap a place on the Valley map, or use the tabs, to visit it.</p>
@@ -300,7 +303,21 @@ const PAGES = [
       ['Is $CROP an investment?', 'No. It\'s the game\'s currency. Only deposit what you\'re happy to play with.'],
     ].map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}` },
 ];
-const PAGE = Object.fromEntries(PAGES.map(p => [p.id, p]));
+
+// The built-in pages with the admin's edits applied (titles, intros, hidden pages, extra
+// text), plus the admin's own pages, in section order.
+let PAGES = BUILT_IN, PAGE = {};
+function buildPages() {
+  const edited = BUILT_IN.map(p => {
+    const e = docs.pages[p.id] || {};
+    return { ...p, title: e.title?.trim() || p.title, lead: e.lead?.trim() || '', extra: e.extra || '', hidden: Boolean(e.hidden) && p.id !== 'introduction' };
+  });
+  const custom = docs.custom.map(c => ({ id: c.id, group: c.group, title: c.title, icon: 'flowerpot', render: () => renderMarkdown(c.body) }));
+  const all = [...edited, ...custom].filter(p => !p.hidden);
+  PAGES = DOCS_GROUPS.flatMap(g => all.filter(p => p.group === g));
+  PAGE = Object.fromEntries(PAGES.map(p => [p.id, p]));
+}
+buildPages();
 
 // --- Layout ------------------------------------------------------------------
 
@@ -323,10 +340,16 @@ function render() {
     <p class="crumb">${page.group}</p>
     <h1>${icon(page.icon, 40)} ${page.title}</h1>
     ${page.render()}
+    ${page.extra ? `<div class="extra">${renderMarkdown(page.extra)}</div>` : ''}
     <nav class="pager">
       ${prev ? `<a class="prev" href="#${prev.id}"><small>Previous</small>${prev.title}</a>` : '<span></span>'}
       ${next ? `<a class="next" href="#${next.id}"><small>Next</small>${next.title}</a>` : '<span></span>'}
     </nav>`;
+  if (page.lead) {
+    const lead = $('#content .lead');
+    if (lead) lead.textContent = page.lead;
+    else $('#content h1').insertAdjacentHTML('afterend', `<p class="lead">${esc(page.lead)}</p>`);
+  }
   const heads = [...$('#content').querySelectorAll('h2[id]')];
   $('#toc').innerHTML = heads.length > 1 ? `<h4>On this page</h4>${heads.map(h => `<a href="#${id}" data-to="${h.id}">${h.textContent.trim()}</a>`).join('')}` : '';
   setMenu(false);
@@ -351,15 +374,15 @@ window.addEventListener('hashchange', render);
 // Use the live economy when the docs are served by the game server.
 async function boot() {
   if (API) {
-    try {
-      const res = await fetch(`${API}/economy`);
-      if (res.ok) {
-        const data = await res.json();
-        applyEconomy(data.economy);
-        crop = data.crop?.enabled ? data.crop : null;
-      }
-    } catch { /* offline: fall back to the built-in numbers */ }
+    const get = (path) => fetch(`${API}${path}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    const [econ, text] = await Promise.all([get('/economy'), get('/docs')]);
+    if (econ) {
+      applyEconomy(econ.economy);
+      crop = econ.crop?.enabled ? econ.crop : null;
+    }
+    if (text) docs = withDocDefaults(text.docs);
   }
+  buildPages();
   render();
 }
 boot();

@@ -140,3 +140,9 @@ details p { margin: 0; padding: 0 14px 12px; }
 .prize-art { flex: none; width: 72px; height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 6px; background: linear-gradient(160deg, #6ad0f0, #a07ad8 55%, #f2c94c); border: 3px solid #e8e8e8; outline: 2px solid #d84a3a; outline-offset: -10px; color: #fff; font-family: var(--font-pixel); text-shadow: 1px 1px 0 #333; }
 .prize-art b { font-size: 26px; line-height: 1; }
 .prize-art small { font-size: 10px; }
+.prize-art img:not(.px) { width: 100%; height: 100%; object-fit: cover; border-radius: 3px; }
+
+/* Text added from the admin docs editor */
+.extra { margin-top: 24px; }
+h3 { font: 700 18px var(--font-pixel); margin: 20px 0 6px; }
+.md-img { max-width: 100%; height: auto; border-radius: 6px; border: 2px solid var(--line); }

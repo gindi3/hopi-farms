@@ -189,3 +189,18 @@ a { color: var(--accent); }
 .link-btn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 #wd-player table td { padding: 4px 6px; }
 .tabs .count[hidden] { display: none; }
+
+/* Docs editor */
+.docs-editor { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); align-items: start; }
+.docs-editor .wide { grid-column: 1 / -1; }
+.docs-editor .card > * + * { margin-top: 12px; }
+.docs-editor textarea {
+  width: 100%; font: 14px/1.5 ui-monospace, Menlo, monospace; padding: 8px 10px; resize: vertical;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+}
+.docs-editor textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.docs-editor input[type="text"], .docs-editor select { width: 100%; }
+.prize-row, .custom-page { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.prize-row .btn { justify-self: start; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.docs-editor .note { margin-top: 4px; }

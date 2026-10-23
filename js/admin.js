@@ -2,6 +2,7 @@
 
 import { RARITIES, RARITY, TIERS, TIER, MAX_LEVEL, CHESTS } from './data.js';
 import { validateEconomy, baseRtpOf } from './economy.js';
+import { DOCS_PAGES, DOCS_GROUPS, DOCS_LIMITS, validateDocs } from './docs-content.js';
 
 const TOKEN_KEY = 'hopi-farms-token';
 const $ = (s, r = document) => r.querySelector(s);
@@ -426,6 +427,10 @@ function countChanges(a, b) {
 }
 
 document.addEventListener('input', (e) => {
+  const doc = e.target.closest('#view [data-doc]');
+  const pick = e.target.closest('#view [data-docs-page]');
+  if (pick) { docsPage = pick.value; return run(renderDocs); }
+  if (doc && docsDraft) return setDoc(doc.dataset.doc, doc.type === 'checkbox' ? doc.checked : doc.value);
   const el = e.target.closest('#view input[data-path]');
   if (!el || !draft) return;
   const raw = Number(el.value);
@@ -736,7 +741,104 @@ async function renderLog() {
 
 // --- Routing ---------------------------------------------------------------------------------
 
-const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, deposits: renderDeposits, withdrawals: renderWithdrawals, leaders: renderLeaders, log: renderLog };
+// --- Docs editor ---------------------------------------------------------------------
+// Edits the text on /docs: prizes, each page's title / intro / extra text / hidden flag, and
+// extra pages. Number tables on the docs are built from the economy, so they aren't here.
+
+let docsSaved = null, docsDraft = null, docsPage = 'introduction';
+const docsDirty = () => docsSaved && docsDraft && JSON.stringify(docsSaved) !== JSON.stringify(docsDraft);
+const MD_HELP = 'Markdown: ## Heading, **bold**, *italic*, - list, 1. list, > tip box, [link](https://…), ![picture](https://…). A blank line starts a new paragraph.';
+
+async function renderDocs() {
+  if (!docsDraft) {
+    const r = await api('GET', '/admin/docs');
+    docsSaved = r.docs; docsDraft = clone(r.docs);
+  }
+  const d = docsDraft;
+  const page = DOCS_PAGES.find(p => p.id === docsPage) || DOCS_PAGES[0];
+  const e = d.pages[page.id] || {};
+  const field = (label, html, hint = '') => `<div class="field"><label>${label}</label>${html}${hint ? `<div class="note">${hint}</div>` : ''}</div>`;
+  const text = (path, value, ph = '', max = DOCS_LIMITS.field) => `<input type="text" data-doc="${path}" value="${esc(value ?? '')}" placeholder="${esc(ph)}" maxlength="${max}">`;
+  const area = (path, value, rows = 6, ph = '') => `<textarea data-doc="${path}" rows="${rows}" maxlength="${DOCS_LIMITS.text}" placeholder="${esc(ph)}">${esc(value ?? '')}</textarea>`;
+  view.innerHTML = `
+    <div class="section-head"><div><h2>Docs</h2><div class="muted">Edit the text on <a href="/docs" target="_blank" rel="noopener">hopifarms.fun/docs</a>. Prices, odds and other number tables update from Pricing on their own.</div></div>
+      <div class="row">
+        <button class="btn" data-docs="revert">Discard changes</button>
+        <button class="btn primary" data-docs="save">Save &amp; publish</button>
+      </div></div>
+    <div class="grid docs-editor">
+      <div class="card"><h3>Leaderboard prizes</h3>
+        ${d.prizes.map((p, i) => `<div class="prize-row">
+          ${field('Prize', text(`prizes.${i}.name`, p.name, 'e.g. 2023 Paldea Evolved Baxcalibur #210'))}
+          ${field('Details', text(`prizes.${i}.detail`, p.detail, 'e.g. Illustration Rare · PSA 10'))}
+          ${field('Value', text(`prizes.${i}.value`, p.value, 'e.g. Fair market value: $349'))}
+          ${field('Picture link (optional)', text(`prizes.${i}.image`, p.image, 'https://…'))}
+          <button class="btn danger small" data-docs="del-prize" data-i="${i}">Remove</button>
+        </div>`).join('') || '<p class="muted">No prizes. The docs will say prizes are coming soon.</p>'}
+        <div class="row"><button class="btn" data-docs="add-prize">Add prize</button></div>
+        ${field('Note under the prizes', `<textarea data-doc="prizeNote" rows="2" maxlength="${DOCS_LIMITS.lead}">${esc(d.prizeNote)}</textarea>`)}
+      </div>
+      <div class="card"><h3>Edit a page</h3>
+        ${field('Page', `<select data-docs-page>${DOCS_GROUPS.map(g => `<optgroup label="${g}">${DOCS_PAGES.filter(p => p.group === g).map(p => `<option value="${p.id}" ${p.id === page.id ? 'selected' : ''}>${esc(p.title)}${d.pages[p.id] && Object.values(d.pages[p.id]).some(Boolean) ? ' (edited)' : ''}</option>`).join('')}</optgroup>`).join('')}</select>`)}
+        ${field('Title', text(`pages.${page.id}.title`, e.title, page.title, DOCS_LIMITS.title), 'Leave blank to keep the built-in title.')}
+        ${field('Intro line', `<textarea data-doc="pages.${page.id}.lead" rows="2" maxlength="${DOCS_LIMITS.lead}" placeholder="Leave blank to keep the built-in intro.">${esc(e.lead ?? '')}</textarea>`)}
+        ${page.id === 'introduction' ? '' : `<label class="check"><input type="checkbox" data-doc="pages.${page.id}.hidden" ${e.hidden ? 'checked' : ''}> Hide this page</label>`}
+        ${field('Extra text at the bottom of the page', area(`pages.${page.id}.extra`, e.extra, 8), MD_HELP)}
+        <div class="row"><a class="btn" href="/docs#${page.id}" target="_blank" rel="noopener">View page</a></div>
+      </div>
+      <div class="card wide"><h3>Your own pages</h3>
+        ${d.custom.map((c, i) => `<div class="custom-page">
+          <div class="form-grid">
+            ${field('Title', text(`custom.${i}.title`, c.title, '', DOCS_LIMITS.title))}
+            ${field('Section', `<select data-doc="custom.${i}.group">${DOCS_GROUPS.map(g => `<option ${g === c.group ? 'selected' : ''}>${g}</option>`).join('')}</select>`)}
+          </div>
+          ${field('Text', area(`custom.${i}.body`, c.body, 10), MD_HELP)}
+          <div class="row"><a class="btn" href="/docs#${c.id}" target="_blank" rel="noopener">View page</a><button class="btn danger small" data-docs="del-page" data-i="${i}">Delete page</button></div>
+        </div>`).join('') || '<p class="muted">No extra pages yet.</p>'}
+        <div class="row"><button class="btn" data-docs="add-page">Add page</button></div>
+      </div>
+    </div>`;
+}
+
+function setDoc(path, value) {
+  const keys = path.split('.');
+  let o = docsDraft;
+  for (const k of keys.slice(0, -1)) o = o[k] ??= {};
+  const last = keys[keys.length - 1];
+  if (value === '' || value === false) {
+    delete o[last];
+    // Drop page edits that are now empty, so the draft matches what's saved.
+    if (keys[0] === 'pages' && !Object.keys(o).length) delete docsDraft.pages[keys[1]];
+  } else o[last] = value;
+}
+
+async function docsAction(kind, el) {
+  const d = docsDraft;
+  if (kind === 'add-prize') d.prizes.push({ name: '', detail: '', value: '', image: '' });
+  else if (kind === 'del-prize') d.prizes.splice(Number(el.dataset.i), 1);
+  else if (kind === 'add-page') {
+    const title = prompt('Title for the new page:', '');
+    if (!title?.trim()) return;
+    let id = `x-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'page'}`;
+    while (d.custom.some(c => c.id === id)) id += '-2';
+    d.custom.push({ id, group: 'Help', title: title.trim().slice(0, DOCS_LIMITS.title), body: '' });
+  } else if (kind === 'del-page') {
+    if (!confirm(`Delete the page "${d.custom[Number(el.dataset.i)].title}"? It goes away when you save.`)) return;
+    d.custom.splice(Number(el.dataset.i), 1);
+  } else if (kind === 'revert') {
+    if (docsDirty() && !confirm('Discard your docs changes?')) return;
+    docsDraft = clone(docsSaved);
+  } else if (kind === 'save') {
+    const errors = validateDocs(d);
+    if (errors.length) return toast(errors.join(' '), true);
+    const r = await api('POST', '/admin/docs', { docs: d });
+    docsSaved = r.docs; docsDraft = clone(r.docs);
+    toast('Docs saved. They are live now.');
+  }
+  await renderDocs();
+}
+
+const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, deposits: renderDeposits, withdrawals: renderWithdrawals, leaders: renderLeaders, docs: renderDocs, log: renderLog };
 
 async function run(fn) {
   try { await fn(); } catch (e) { showError(e); }
@@ -744,7 +846,9 @@ async function run(fn) {
 
 function setTab(name) {
   if (tab === 'pricing' && name !== 'pricing' && draft && countChanges(saved, draft) && !confirm('You have unsaved pricing changes. Leave without saving?')) return;
+  if (tab === 'docs' && name !== 'docs' && docsDirty() && !confirm('You have unsaved docs changes. Leave without saving?')) return;
   if (name !== 'pricing') draft = null;
+  if (name !== 'docs') docsDraft = null;
   tab = name;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   view.innerHTML = '<p class="muted">Loading…</p>';
@@ -762,6 +866,8 @@ document.addEventListener('click', (e) => {
       await renderDeposits();
     });
   }
+  const da = e.target.closest('[data-docs]');
+  if (da) return run(() => docsAction(da.dataset.docs, da));
   const pa = e.target.closest('[data-pricing]');
   if (pa) return run(() => pricingAction(pa.dataset.pricing));
   const pg = e.target.closest('[data-page]');
@@ -798,6 +904,7 @@ document.addEventListener('click', (e) => {
 
 addEventListener('beforeunload', (e) => {
   if (tab === 'pricing' && draft && saved && countChanges(saved, draft)) e.preventDefault();
+  if (tab === 'docs' && docsDirty()) e.preventDefault();
 });
 
 async function boot() {

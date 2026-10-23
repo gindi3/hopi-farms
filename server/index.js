@@ -21,6 +21,7 @@ import { openDb } from './db.js';
 import { adminRoutes, actionStats, dayOf } from './admin.js';
 import { createDeposits, depositConfig } from './deposits.js';
 import { createWithdrawals } from './withdrawals.js';
+import { withDocDefaults } from '../js/docs-content.js';
 import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY, withDefaults } from '../js/economy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,11 +40,13 @@ const CSP = [
   "script-src 'self' https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src https://fonts.gstatic.com",
-  "img-src 'self' data:",
+  "img-src 'self' data: https:",   // https: for prize pictures linked from the docs editor
   "connect-src 'self' https://cloudflareinsights.com",
   "frame-ancestors 'none'",
 ].join('; ');
 const MAX_BODY = 8 * 1024;
+// The docs editor saves every page's text at once, so it gets a bigger allowance.
+const MAX_BODY_FOR = { '/api/admin/docs': 512 * 1024 };
 const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
 
 // A fingerprint of the game's files. The page loads its code from /v/<build>/…, so every
@@ -184,6 +187,9 @@ export function createServer({
     // Also says whether $CROP deposits are open, and the token's contract address.
     'GET /api/economy': () => ok({ economy: snapshotEconomy(), crop: deposits.publicInfo() }),
 
+    // Editable docs text for /docs (the number tables come from /api/economy).
+    'GET /api/docs': () => ok({ docs: withDocDefaults(store.getSetting('docs')) }),
+
     'GET /api/leaderboard': (req, { userId }) => {
       const rows = store.leaderboard(25);
       const top = rows.map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, xp: r.xp, you: r.user_id === userId }));
@@ -195,7 +201,7 @@ export function createServer({
       return ok({ top, you, players: store.farmCount() });
     },
   };
-  const PUBLIC = new Set(['POST /api/guest', 'POST /api/login', 'POST /api/logout', 'GET /api/leaderboard', 'GET /api/economy']);
+  const PUBLIC = new Set(['POST /api/guest', 'POST /api/login', 'POST /api/logout', 'GET /api/leaderboard', 'GET /api/economy', 'GET /api/docs']);
   const deposits = createDeposits({
     store, ok, bad, loadFarm, log,
     config: depositOpts.config || depositConfig(),
@@ -241,7 +247,7 @@ export function createServer({
         const userId = sessionUserId(req);
         if (!userId && !PUBLIC.has(key)) return send(res, bad('Please sign in again.', 401));
         if (isAdminRoute && !store.isAdmin(userId)) return send(res, bad('This account is not an admin.', 403));
-        const body = req.method === 'POST' ? await readJson(req) : null;
+        const body = req.method === 'POST' ? await readJson(req, MAX_BODY_FOR[url.pathname] || MAX_BODY) : null;
         if (body === INVALID) return send(res, bad('Bad request body.'));
         const out = await handler(req, { userId, body, url });
         if (out.status === 200 && out.json) Object.assign(out.json, { build, econ });
@@ -309,17 +315,17 @@ function send(res, { status, json, type, body, cache = 'no-cache' }) {
 
 const INVALID = Symbol('invalid');
 
-function readJson(req) {
+function readJson(req, maxBody = MAX_BODY) {
   return new Promise((resolveBody) => {
     let size = 0;
     const chunks = [];
     // Past the limit, keep draining but stop storing, then answer with an error.
     req.on('data', (c) => {
       size += c.length;
-      if (size <= MAX_BODY) chunks.push(c);
+      if (size <= maxBody) chunks.push(c);
     });
     req.on('end', () => {
-      if (size > MAX_BODY) return resolveBody(INVALID);
+      if (size > maxBody) return resolveBody(INVALID);
       if (!chunks.length) return resolveBody({});
       try {
         const v = JSON.parse(Buffer.concat(chunks).toString('utf8'));
