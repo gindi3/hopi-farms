@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hopi Farms X header</title>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=VT323&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; padding: 16px; background: #222; color: #eee; font: 14px system-ui, sans-serif; }
+    canvas { display: block; max-width: 100%; image-rendering: pixelated; }
+    a { color: #f2c94c; }
+  </style>
+</head>
+<body>
+  <!-- X (Twitter) header, 1500×500, drawn from the game's own scenes and sprites.
+       Open over any static server from the repo root (e.g. python3 -m http.server) and
+       press "Download PNG". Re-roll the crops by reloading. -->
+  <canvas id="out" width="1500" height="500"></canvas>
+  <p><a id="dl" download="hopi-farms-x-header.png" href="#">Download PNG</a> · 1500 × 500 · reload for different crops</p>
+  <script type="module">
+    import { drawFarm, drawValley, PLOT_POS, SCENE_W, SCENE_H } from '../js/scene.js';
+    import { spriteUrl } from '../js/sprites.js';
+    import { CROPS, RARITIES } from '../js/data.js';
+
+    const W = 1500, H = 500, S = 2;
+    const out = document.getElementById('out');
+    const g = out.getContext('2d');
+    g.imageSmoothingEnabled = false;
+
+    const load = (src) => new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = src; });
+    await document.fonts.load('700 40px "Pixelify Sans"');
+    await document.fonts.load('40px VT323');
+
+    // Scenes at the game's own 2× pixel scale.
+    const valley = document.createElement('canvas');
+    const farm = document.createElement('canvas');
+    drawValley(valley);
+    drawFarm(farm);
+
+    // Fill the farm with fully grown crops, rarer ones sprinkled in.
+    const fg = farm.getContext('2d');
+    fg.imageSmoothingEnabled = false;
+    const weights = { common: 30, uncommon: 30, rare: 20, epic: 12, legendary: 8 };
+    const pickCrop = () => {
+      let r = Math.random() * 100;
+      const rarity = RARITIES.find(x => (r -= weights[x]) < 0) || 'legendary';
+      const pool = CROPS.filter(c => c.rarity === rarity);
+      return pool[Math.floor(Math.random() * pool.length)];
+    };
+    for (const { x, y } of PLOT_POS) {
+      const img = await load(spriteUrl(`crop:${pickCrop().id}`));
+      fg.drawImage(img, Math.round(x * S - 32), Math.round(y * S - 34), 64, 64);
+    }
+
+    // Layout: valley on the left, farm on the right, a frame top and bottom.
+    const sceneW = SCENE_W * S, sceneH = SCENE_H * S;   // 800 × 480
+    const top = (H - sceneH) / 2;
+    g.fillStyle = '#4a2a17';
+    g.fillRect(0, 0, W, H);
+    g.drawImage(valley, -100, top);
+    g.drawImage(farm, W - sceneW, top);
+    g.fillStyle = '#c88a52';
+    g.fillRect(0, top - 4, W, 4);
+    g.fillRect(0, top + sceneH, W, 4);
+
+    // Wooden sign in the middle with the farmer and the name.
+    const sw = 620, sh = 210, sx = (W - sw) / 2, sy = (H - sh) / 2 - 18;
+    const box = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    box(sx + 6, sy + sh, sw - 12, 10, 'rgba(43,22,10,.45)');          // shadow
+    box(sx, sy, sw, sh, '#4a2a17');                                      // outline
+    box(sx + 4, sy + 4, sw - 8, sh - 8, '#f0bc7c');                      // light rim
+    box(sx + 8, sy + 8, sw - 16, sh - 16, '#c88a52');                    // wood
+    box(sx + 8, sy + sh - 20, sw - 16, 12, '#a06a3a');                   // lower lip
+    for (let i = 0; i < 4; i++) box(sx + 8, sy + 52 + i * 40, sw - 16, 2, '#b07642');   // plank lines
+    for (const [nx, ny] of [[sx + 18, sy + 18], [sx + sw - 26, sy + 18], [sx + 18, sy + sh - 34], [sx + sw - 26, sy + sh - 34]]) {
+      box(nx, ny, 8, 8, '#6b4424'); box(nx + 2, ny + 2, 4, 4, '#e8c890');   // nails
+    }
+
+    const farmer = await load('logo-transparent.png');
+    const fh = 170, fw = Math.round(farmer.width * fh / farmer.height);
+    g.drawImage(farmer, sx + 26, sy + (sh - fh) / 2 - 4, fw, fh);
+
+    const outlined = (text, x, y, font, fill, stroke = '#4a2a17', t = 5) => {
+      g.font = font;
+      g.textBaseline = 'alphabetic';
+      g.fillStyle = stroke;
+      for (let dx = -t; dx <= t; dx += t) for (let dy = -t; dy <= t; dy += t) g.fillText(text, x + dx, y + dy);
+      g.fillText(text, x, y + t + 3);
+      g.fillStyle = fill;
+      g.fillText(text, x, y);
+    };
+    const tx = sx + 26 + fw + 22;
+    outlined('HOPI FARMS', tx, sy + 104, '700 76px "Pixelify Sans"', '#fff6e2');
+    outlined('Grow crops. Harvest $CROP.', tx + 2, sy + 146, '700 30px "Pixelify Sans"', '#f2c94c', '#4a2a17', 3);
+    g.font = '30px VT323';
+    g.fillStyle = '#4a2a17';
+    g.fillText('hopifarms.fun', tx + 4, sy + 182);
+
+    document.getElementById('dl').href = out.toDataURL('image/png');
+    window.headerReady = true;
+  </script>
+</body>
+</html>
