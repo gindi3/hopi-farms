@@ -207,11 +207,8 @@ function fmtTime(ms) {
   return `${sec}s`;
 }
 
-function msToMidnight() {
-  const d = new Date();
-  d.setHours(24, 0, 0, 0);
-  return d.getTime() - Date.now();
-}
+// Time until the daily chest resets (midnight UTC, on the server's clock).
+const msToMidnight = () => G.msToNextDay(now());
 
 // --- Header ------------------------------------------------------------------
 
@@ -849,6 +846,7 @@ function renderHouse() {
         <div class="actions">${canChest
           ? `<button class="btn orange" data-action="chest">Open chest</button>`
           : `<button class="btn cream" disabled>Next chest in <span id="chest-timer">${fmtTime(msToMidnight())}</span></button>`}</div>
+        <div class="muted">Chests reset at midnight UTC${new Date().getTimezoneOffset() ? ` (${new Date(now() + msToMidnight()).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} your time)` : ''}, and every level-up refreshes yours.</div>
       </div>
       <div class="card">
         <h4>Farm stats</h4>

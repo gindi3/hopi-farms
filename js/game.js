@@ -247,9 +247,17 @@ export function levelUp(state) {
   return { level: state.level, gems, chestRefreshed: chestReady };
 }
 
+// The chest day is a UTC calendar day, so the server and every player's browser agree on
+// when it resets, whatever their time zone.
 export function dayKey(now) {
   const d = new Date(now);
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+}
+
+// Milliseconds until the next chest day starts (midnight UTC).
+export function msToNextDay(now) {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1) - now;
 }
 
 export function canClaimChest(state, now) {

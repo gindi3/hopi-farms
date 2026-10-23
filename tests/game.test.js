@@ -180,3 +180,10 @@ test('history counters: pulls per crop, spend per tier, payouts per crop', () =>
   assert.equal(s.stats.harvestedBy.potato, 10);
   assert.equal(s.stats.harvestCoins, 10);
 });
+
+test('the chest day is a UTC day and resets at midnight UTC', () => {
+  const lateUtc = Date.UTC(2026, 9, 23, 23, 30);
+  assert.equal(G.dayKey(lateUtc), '2026-10-23');
+  assert.equal(G.dayKey(lateUtc + 31 * 60e3), '2026-10-24');
+  assert.equal(G.msToNextDay(lateUtc), 30 * 60e3);
+});
