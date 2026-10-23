@@ -960,7 +960,7 @@ function renderHouse() {
     </div>`;
 }
 
-// --- $CROP deposits (one way: $CROP in, coins out; nothing is ever withdrawn) ---------
+// --- $CROP deposits ($CROP in, credited 1:1; withdrawals are requested separately) ---------
 
 const shortAddr = (a) => (a ? `${a.slice(0, 4)}…${a.slice(-4)}` : '');
 
@@ -993,7 +993,7 @@ async function renderCropCard() {
       : '<p class="muted">No deposits yet.</p>';
     bodyHtml = `
       <div class="muted">Linked wallet: <b>${esc(shortAddr(w.wallet))}</b></div>
-      <p class="muted" style="margin:0">Send $CROP <b>from your linked wallet</b> to the game wallet below. It shows up in your farm about a minute after Solana confirms the transfer. Deposits are one way: $CROP can't be withdrawn.</p>
+      <p class="muted" style="margin:0">Send $CROP <b>from your linked wallet</b> to the game wallet below. It shows up in your farm about a minute after Solana confirms the transfer. You can request $CROP back to this wallet once a day from the Withdraw page.</p>
       <div class="copy-row"><code class="addr">${esc(w.treasury)}</code><button class="btn cream small" data-action="copy" data-copy="${esc(w.treasury)}">Copy</button></div>
       <div class="muted">Token: <code class="addr small">${esc(w.mint)}</code></div>
       ${list}

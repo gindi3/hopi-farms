@@ -1,4 +1,4 @@
-// Solana support for one-way $CROP deposits. The server never holds a private key: it only
+// Solana support for $CROP deposits. The server never holds a private key: it only
 // verifies wallet signatures (to link a player's wallet) and reads the chain to find $CROP
 // sent to the treasury.
 
