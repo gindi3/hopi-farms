@@ -654,9 +654,6 @@ function renderBackpack() {
         ${items.length ? `<div class="list">${items.map(([id, n]) => `
           <div class="item slot">${spriteImg(id, 32)}<span class="meta"><b>${ITEMS[id].name}</b><span>${ITEMS[id].desc}</span></span><span class="qty">×${n}</span></div>`).join('')}</div>` : '<p class="empty-note">Daily chests can drop potions.</p>'}
       </div>
-      <div class="card wide">
-        <div class="actions left"><button class="btn cream" data-action="reset">Reset farm</button></div>
-      </div>
     </div>`;
 }
 
@@ -868,15 +865,6 @@ document.addEventListener('click', (e) => {
     case 'level-up':
       return dispatch({ type: 'levelUp' }).then(r => { if (r) { toast(`Valley level ${r.level}! +${r.gems} gems`); refresh(); } });
     case 'chest': return openChest();
-    case 'reset':
-      if (confirm('Reset your farm? This deletes all progress.')) {
-        dispatch({ type: 'reset' }).then(r => {
-          if (!r) return;
-          setTab('valley');
-          showIntro();
-        });
-      }
-      return;
   }
 });
 

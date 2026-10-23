@@ -96,14 +96,6 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
       state.seenIntro = true;
       return {};
 
-    // Start the farm over, keeping the name.
-    case 'reset': {
-      const fresh = G.newGame(state.name);
-      for (const key of Object.keys(state)) delete state[key];
-      Object.assign(state, fresh);
-      return {};
-    }
-
     default:
       throw new G.GameError('Unknown action.');
   }

@@ -57,6 +57,8 @@ test('the client cannot set its own coins', async () => {
   const g = await guest();
   const r = await call('POST', '/api/action', { token: g.token, body: { type: 'setCoins', coins: 1e9 } });
   assert.equal(r.status, 400);
+  const reset = await call('POST', '/api/action', { token: g.token, body: { type: 'reset' } });
+  assert.equal(reset.status, 400);
   const r2 = await call('POST', '/api/action', { token: g.token, body: { type: 'rename', name: 'x', coins: 1e9 } });
   assert.equal(r2.data.state.coins, 100);
 });
