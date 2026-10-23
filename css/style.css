@@ -709,6 +709,7 @@ b.down { color: #b8402e; }
 
 /* Sound toggle in the top bar. */
 .hud .sound-btn { font-family: var(--font-pixel); font-size: 13px; color: var(--ink-soft); cursor: pointer; padding: 0 6px; }
+.hud .docs-btn { text-decoration: none; }
 
 /* Treasure chest opening. */
 .treasure .chest-stage {
