@@ -678,3 +678,6 @@ code.addr.small { font-size: 11px; padding: 1px 4px; border-width: 1px; }
 .hud .btn[data-action="deposit"] { min-height: 46px; font-size: 16px; }
 .deposit-panel { display: flex; flex-direction: column; gap: 10px; }
 @media (max-width: 760px) { .hud-crop { order: 0; margin-left: 0; width: 100%; } }
+
+/* Unit labels on the top-bar boxes, so gems and XP can't be mixed up. */
+.hud .pill small.unit { font-family: var(--font-pixel); font-size: 12px; color: var(--ink-soft); margin-left: -2px; }
