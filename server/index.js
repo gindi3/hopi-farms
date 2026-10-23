@@ -27,13 +27,15 @@ const TYPES = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
 };
+// Cloudflare injects its Web Analytics beacon from static.cloudflareinsights.com and the
+// beacon reports to cloudflareinsights.com.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src https://fonts.gstatic.com",
   "img-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://cloudflareinsights.com",
   "frame-ancestors 'none'",
 ].join('; ');
 const MAX_BODY = 8 * 1024;
