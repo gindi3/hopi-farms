@@ -654,3 +654,27 @@ code.addr {
   user-select: all;
 }
 code.addr.small { font-size: 11px; padding: 1px 4px; border-width: 1px; }
+
+/* Top bar, right: $CROP contract address and Deposit button. */
+.hud-crop { order: 3; margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hud-crop[hidden] { display: none; }
+.ca-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 15px solid transparent;
+  border-image: var(--ui-pill) 5 fill / 15px / 0 stretch;
+  image-rendering: pixelated;
+  padding: 0 2px;
+  min-height: 44px;
+  cursor: copy;
+}
+.ca-pill .ca-label { font-family: var(--font-pixel); font-size: 13px; color: var(--ink-soft); }
+.ca-pill code { font-family: ui-monospace, Menlo, monospace; font-size: 14px; color: var(--ink); }
+.ca-pill .ca-copy { font-size: 16px; color: #5a6aa8; }
+.ca-pill:hover { filter: brightness(1.05); }
+.ca-buy {
+  font-family: var(--font-pixel); font-size: 14px;
+  color: var(--cream-text); text-shadow: var(--text-outline); text-decoration: underline;
+}
+.hud .btn[data-action="deposit"] { min-height: 46px; font-size: 16px; }
+.deposit-panel { display: flex; flex-direction: column; gap: 10px; }
+@media (max-width: 760px) { .hud-crop { order: 0; margin-left: 0; width: 100%; } }

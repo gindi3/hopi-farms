@@ -180,7 +180,8 @@ export function createServer({
     },
 
     // Current prices and odds, so every client computes the same numbers as the server.
-    'GET /api/economy': () => ok({ economy: snapshotEconomy() }),
+    // Also says whether $CROP deposits are open, and the token's contract address.
+    'GET /api/economy': () => ok({ economy: snapshotEconomy(), crop: deposits.publicInfo() }),
 
     'GET /api/leaderboard': (req, { userId }) => {
       const rows = store.leaderboard(25);

@@ -103,10 +103,25 @@ function checkBuild(build) {
 // The server owns prices and odds. When a reply carries a new economy version, fetch the
 // settings, apply them, and redraw so every number on screen matches the server.
 let econ = null;
+let cropInfo = null;       // { enabled, mint, treasury } for $CROP deposits
 async function syncEconomy(version) {
   const data = await api('GET', '/economy');
   applyEconomy(data.economy);
+  cropInfo = data.crop || null;
   econ = version || data.econ;
+  renderHudCrop();
+}
+
+// Top bar, right side: the $CROP contract address (copy + buy link) and Deposit button.
+function renderHudCrop() {
+  const box = $('#hud-crop');
+  if (!box) return;
+  const mint = cropInfo?.enabled ? cropInfo.mint : null;
+  box.hidden = !ONLINE || !mint;
+  if (!mint) return;
+  $('#ca-short').textContent = `${mint.slice(0, 4)}…${mint.slice(-4)}`;
+  $('#ca-pill').dataset.copy = mint;
+  $('#ca-buy').href = `https://pump.fun/coin/${encodeURIComponent(mint)}`;
 }
 function checkEconomy(version) {
   if (!version || version === econ || econ === null) return;
@@ -649,7 +664,6 @@ function renderHouse() {
           ? `<button class="btn orange" data-action="chest">Open chest</button>`
           : `<button class="btn cream" disabled>Next chest in <span id="chest-timer">${fmtTime(msToMidnight())}</span></button>`}</div>
       </div>
-      ${ONLINE ? `<div class="card" id="crop-card"><h4>$CROP deposits</h4><p class="muted">Loading…</p></div>` : ''}
       <div class="card">
         <h4>Farm stats</h4>
         <table class="odds">
@@ -669,7 +683,6 @@ function renderHouse() {
         </div>
       </div>
     </div>`;
-  renderCropCard();
 }
 
 // --- $CROP deposits (one way: $CROP in, coins out; nothing is ever withdrawn) ---------
@@ -711,7 +724,7 @@ async function renderCropCard() {
       ${list}
       <div class="actions"><button class="btn cream small" data-action="link-wallet">Change wallet</button></div>`;
   }
-  box.innerHTML = `<div class="row">${spriteImg('coin', 40)}<div><h4>Deposit $CROP</h4><div class="muted">Your balance: ${fmt(state.coins)} $CROP</div></div></div>${bodyHtml}`;
+  box.innerHTML = `<div class="row">${spriteImg('coin', 40)}<div><h3 style="margin:0">Deposit $CROP</h3><div class="muted">Your balance: ${fmt(state.coins)} $CROP</div></div></div>${bodyHtml}`;
 }
 
 async function linkWallet() {
@@ -1001,8 +1014,13 @@ document.addEventListener('click', (e) => {
       return dispatch({ type: 'levelUp' }).then(r => { if (r) { toast(`Valley level ${r.level}! +${r.gems} gems`); refresh(); } });
     case 'chest': return openChest();
     case 'link-wallet': return linkWallet();
+    case 'deposit':
+      openModal(`<div id="crop-card" class="deposit-panel"><h3>Deposit $CROP</h3><p class="muted">Loading…</p></div>`);
+      return renderCropCard();
     case 'copy':
-      navigator.clipboard?.writeText(el.dataset.copy).then(() => toast('Address copied.'), () => toast('Copy failed: select the address instead.', true));
+      navigator.clipboard?.writeText(el.dataset.copy).then(
+        () => toast(el.id === 'ca-pill' ? '$CROP contract address copied.' : 'Address copied.'),
+        () => toast('Copy failed: select the address instead.', true));
       return;
   }
 });
