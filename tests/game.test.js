@@ -11,13 +11,13 @@ test('drop table sums to 1 and base RTP matches the docs', () => {
   near(G.expectedReturn(0), 0.9556, 1e-4);
 });
 
-test('RTP adds 0.10% per level and caps at 99.0% at level 35', () => {
+test('each level adds +0.25% to harvests: 99.14% RTP at level 15', () => {
   near(G.rtp(0), 0.9556);
-  near(G.rtp(10), 0.9656);
-  near(G.rtp(34), 0.9896);
-  near(G.rtp(35), 0.99);
-  near(G.expectedReturn(35), 0.99, 1e-4);
-  for (let l = 0; l <= MAX_LEVEL; l++) assert.ok(G.expectedReturn(l) <= 0.99 + 1e-9);
+  near(G.rtp(1), 0.9556 * 1.0025);
+  near(G.rtp(15), 0.9556 * 1.0375);
+  near(G.expectedReturn(15), 0.99144, 1e-5);
+  assert.equal(MAX_LEVEL, 15);
+  for (let l = 0; l <= MAX_LEVEL; l++) assert.ok(G.expectedReturn(l) < 1, `level ${l} stays below break-even`);
 });
 
 test('every tier has a crop for every rarity', () => {
@@ -30,20 +30,20 @@ test('chest loot tables sum to 1', () => {
   for (const c of CHESTS) near(c.loot.reduce((s, [, p]) => s + p, 0), 1, 1e-9);
 });
 
-test('plots: 15 at level 0, +1 per even level, 30 by level 30', () => {
+test('plots: 15 at level 0, +1 every level, all 30 open at level 15', () => {
   assert.equal(G.plotCount(0), 15);
-  assert.equal(G.plotCount(1), 15);
-  assert.equal(G.plotCount(2), 16);
-  assert.equal(G.plotCount(30), 30);
-  assert.equal(G.plotCount(35), 30);
-  assert.equal(G.levelUnlockingPlot(15), 2);
-  assert.equal(G.levelUnlockingPlot(29), 30);
+  assert.equal(G.plotCount(1), 16);
+  assert.equal(G.plotCount(7), 22);
+  assert.equal(G.plotCount(15), 30);
+  assert.equal(G.levelUnlockingPlot(14), 0);
+  assert.equal(G.levelUnlockingPlot(15), 1);
+  assert.equal(G.levelUnlockingPlot(29), 15);
 });
 
-test('level costs total 85,050', () => {
+test('level costs total 7,550 over 15 levels', () => {
   let total = 0;
   for (let l = 0; l < MAX_LEVEL; l++) total += G.nextLevelCost(l);
-  assert.equal(total, 85050);
+  assert.equal(total, 7550);
   assert.equal(G.nextLevelCost(MAX_LEVEL), null);
 });
 
@@ -65,12 +65,12 @@ test('buy, open, plant, grow and harvest a pack', () => {
 
 test('level bonus scales payouts', () => {
   assert.equal(G.cropPayout('potato', 0), 10);
-  assert.equal(G.cropPayout('potato', 35), 10.36);
+  assert.equal(G.cropPayout('potato', 15), 10.38);
 });
 
 test('locked plots reject planting', () => {
   const s = G.newGame();
-  assert.throws(() => G.plant(s, 15, 'f_potato', 0), /unlocks at level 2/);
+  assert.throws(() => G.plant(s, 15, 'f_potato', 0), /unlocks at level 1/);
 });
 
 test('finish now costs 1 gem per hour left, rounded up', () => {
@@ -85,10 +85,11 @@ test('finish now costs 1 gem per hour left, rounded up', () => {
 
 test('level up pays gems and spends coins', () => {
   const s = G.newGame();
-  const r = G.levelUp(s);
+  const r = G.levelUp(s);   // starts with 100 coins; level 1 costs 100
   assert.deepEqual(r, { level: 1, gems: 10 });
   assert.equal(s.coins, 0);
-  assert.throws(() => G.levelUp(s), G.GameError);
+  s.coins = 124;
+  assert.throws(() => G.levelUp(s), G.GameError);   // level 2 costs 125
 });
 
 test('chest is once per day', () => {

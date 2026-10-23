@@ -26,7 +26,6 @@ export const HARVEST_GEMS = {
   epic:      { feeble: 1, pico: 1, basic: 2,  premium: 5 },
   legendary: { feeble: 5, pico: 5, basic: 10, premium: 25 },
 };
-export const FIRST_HARVEST_GEMS = 2;
 
 // Crop roster. `shape` and `colors` drive the sprite generator in sprites.js.
 export const CROPS = [
@@ -71,23 +70,29 @@ export const CROPS = [
 
 export const CROP = Object.fromEntries(CROPS.map(c => [c.id, c]));
 
-// RTP: 95.56% base + 0.10% per level, hard-capped at 99.0%.
-export const BASE_RTP = 0.9556;
-export const RTP_PER_LEVEL = 0.001;
-export const RTP_CAP = 0.99;
-export const MAX_LEVEL = 35;
+// Tunable economy numbers. These, and the TIER costs, RARITY odds/payouts/hours,
+// LEVEL_COSTS, HARVEST_GEMS, STARTER coins and CHESTS gem ranges below, can be changed
+// at runtime from the admin dashboard (see economy.js); keep them mutable.
+//   Each valley level adds harvestBonusPerLevel to every harvest payout, so
+//   RTP = min(baseRtp × (1 + harvestBonusPerLevel × level), rtpCap). baseRtp comes from the odds.
+//   Defaults: +0.25% per level, +3.75% at level 15 → 95.56% × 1.0375 ≈ 99.14%.
+export const ECON = {
+  baseRtp: 0.9556,
+  harvestBonusPerLevel: 0.0025,
+  rtpCap: 1.0,
+  firstHarvestGems: 2,
+  levelUpGemsPerLevel: 10,
+};
+export const MAX_LEVEL = 15;
 
-// Cost to go from level (i) to (i + 1). Levels 1–15 follow the original; +250 per level after.
-export const LEVEL_COSTS = [
-  100, 125, 150, 175, 250, 300, 350, 400, 450, 600,
-  700, 800, 900, 1000, 1250,
-  ...Array.from({ length: 20 }, (_, i) => 1500 + 250 * i),
-];
+// Cost to go from level (i) to (i + 1); 7,550 in total for all 15 levels.
+export const LEVEL_COSTS = [100, 125, 150, 175, 250, 300, 350, 400, 450, 600, 700, 800, 900, 1000, 1250];
 
 export const BASE_PLOTS = 15;
+// Levels that open one more plot: every level, so all 30 are open at level 15.
+export const PLOT_LEVELS = Array.from({ length: 15 }, (_, i) => i + 1);
+// Plot slots in a save and on the farm screen.
 export const MAX_PLOTS = 30;
-export const REFERRAL_LEVEL = 5;
-export const LEVEL_UP_GEMS_PER_LEVEL = 10;
 
 export const STARTER = { coins: 100, seeds: { f_potato: 2, f_lettuce: 2, f_cabbage: 1 } };
 
@@ -96,11 +101,11 @@ export const STARTER = { coins: 100, seeds: { f_potato: 2, f_lettuce: 2, f_cabba
 export const CHESTS = [
   { id: 'wooden', label: 'Wooden', minLevel: 0,  gems: [1, 2],  produceTier: 'pico',
     loot: [['produce', 0.90], ['seed:feeble', 0.098], ['seed:pico', 0.002]] },
-  { id: 'bronze', label: 'Bronze', minLevel: 10, gems: [2, 4],  produceTier: 'pico',
+  { id: 'bronze', label: 'Bronze', minLevel: 5,  gems: [2, 4],  produceTier: 'pico',
     loot: [['produce', 0.533], ['elixir', 0.02], ['pesticide', 0.02], ['seed:feeble', 0.40], ['seed:pico', 0.025], ['seed:basic', 0.002]] },
-  { id: 'silver', label: 'Silver', minLevel: 20, gems: [4, 8],  produceTier: 'basic',
+  { id: 'silver', label: 'Silver', minLevel: 10, gems: [4, 8],  produceTier: 'basic',
     loot: [['produce', 0.50], ['elixir', 0.04], ['pesticide', 0.04], ['fertilizer', 0.005], ['seed:feeble', 0.30], ['seed:pico', 0.095], ['seed:basic', 0.02]] },
-  { id: 'gold',   label: 'Gold',   minLevel: 30, gems: [8, 15], produceTier: 'premium',
+  { id: 'gold',   label: 'Gold',   minLevel: 15, gems: [8, 15], produceTier: 'premium',
     loot: [['produce', 0.55], ['elixir', 0.06], ['pesticide', 0.08], ['fertilizer', 0.02], ['seed:feeble', 0.099], ['seed:pico', 0.15], ['seed:basic', 0.04], ['seed:premium', 0.001]] },
 ];
 

@@ -2,9 +2,9 @@
 // so they run in tests. `now` is passed in (ms) and `rng` returns [0, 1).
 
 import {
-  RARITIES, RARITY, TIER, CROPS, CROP, HARVEST_GEMS, FIRST_HARVEST_GEMS,
-  BASE_RTP, RTP_PER_LEVEL, RTP_CAP, MAX_LEVEL, LEVEL_COSTS, BASE_PLOTS, MAX_PLOTS,
-  LEVEL_UP_GEMS_PER_LEVEL, STARTER, CHESTS, ELIXIR_HOURS, HOUR_MS,
+  RARITIES, RARITY, TIER, CROPS, CROP, HARVEST_GEMS, ECON,
+  MAX_LEVEL, LEVEL_COSTS, BASE_PLOTS, MAX_PLOTS, PLOT_LEVELS,
+  STARTER, CHESTS, ELIXIR_HOURS, HOUR_MS,
 } from './data.js';
 
 export const SAVE_VERSION = 1;
@@ -24,33 +24,34 @@ export function newGame(name = 'Farmer') {
     harvested: {},      // crop ids harvested at least once (for first-harvest gems)
     plots: Array.from({ length: MAX_PLOTS }, () => null),
     lastChestDay: null,
-    stats: { packsOpened: 0, harvests: 0, coinsSpent: 0, coinsEarned: 0 },
+    stats: { packsOpened: 0, harvests: 0, coinsSpent: 0, coinsEarned: 0, packSpend: 0, levelSpend: 0 },
   };
 }
 
 // --- Economy -----------------------------------------------------------------
 
 export function rtp(level) {
-  return Math.min(BASE_RTP + RTP_PER_LEVEL * level, RTP_CAP);
+  return Math.min(ECON.baseRtp * (1 + ECON.harvestBonusPerLevel * level), ECON.rtpCap);
 }
 
 export function cropPayout(cropId, level) {
   const crop = CROP[cropId];
-  const raw = TIER[crop.tier].cost * RARITY[crop.rarity].mult * (rtp(level) / BASE_RTP);
+  const raw = TIER[crop.tier].cost * RARITY[crop.rarity].mult * (rtp(level) / ECON.baseRtp);
   return round2(raw);
 }
 
 export function expectedReturn(level) {
-  return RARITIES.reduce((sum, r) => sum + RARITY[r].chance * RARITY[r].mult, 0) * (rtp(level) / BASE_RTP);
+  return RARITIES.reduce((sum, r) => sum + RARITY[r].chance * RARITY[r].mult, 0) * (rtp(level) / ECON.baseRtp);
 }
 
 export function plotCount(level) {
-  return Math.min(BASE_PLOTS + Math.floor(level / 2), MAX_PLOTS);
+  return BASE_PLOTS + PLOT_LEVELS.filter(l => l <= level).length;
 }
 
+// The level that opens plot `index`, or null if it never opens.
 export function levelUnlockingPlot(index) {
   if (index < BASE_PLOTS) return 0;
-  return (index - BASE_PLOTS + 1) * 2;
+  return PLOT_LEVELS[index - BASE_PLOTS] ?? null;
 }
 
 export function nextLevelCost(level) {
@@ -71,6 +72,7 @@ export function buyPack(state, tier) {
   if (state.coins < cost) throw new GameError(`Not enough coins for a ${TIER[tier].label} pack.`);
   state.coins = round2(state.coins - cost);
   state.stats.coinsSpent = round2(state.stats.coinsSpent + cost);
+  state.stats.packSpend = round2((state.stats.packSpend || 0) + cost);
   state.packs[tier] = (state.packs[tier] || 0) + 1;
   return { tier };
 }
@@ -128,7 +130,7 @@ export function harvest(state, plotIndex, now) {
   const firstTime = !state.harvested[crop.id];
   if (firstTime) {
     state.harvested[crop.id] = true;
-    gems += FIRST_HARVEST_GEMS;
+    gems += ECON.firstHarvestGems;
   }
   const xp = TIER[crop.tier].xpHarvest;
   state.coins = round2(state.coins + coins);
@@ -173,8 +175,9 @@ export function levelUp(state) {
   if (state.coins < cost) throw new GameError(`You need ${cost} coins for the next level.`);
   state.coins = round2(state.coins - cost);
   state.stats.coinsSpent = round2(state.stats.coinsSpent + cost);
+  state.stats.levelSpend = round2((state.stats.levelSpend || 0) + cost);
   state.level += 1;
-  const gems = LEVEL_UP_GEMS_PER_LEVEL * state.level;
+  const gems = ECON.levelUpGemsPerLevel * state.level;
   state.gems += gems;
   return { level: state.level, gems };
 }
@@ -231,6 +234,7 @@ export function deserialize(json) {
   if (!data || data.version !== SAVE_VERSION) return null;
   const fresh = newGame(data.name);
   const state = { ...fresh, ...data, stats: { ...fresh.stats, ...data.stats } };
+  state.level = Math.min(Math.max(0, state.level | 0), MAX_LEVEL);
   if (!Array.isArray(state.plots) || state.plots.length !== MAX_PLOTS) {
     state.plots = Array.from({ length: MAX_PLOTS }, (_, i) => data.plots?.[i] ?? null);
   }
@@ -242,7 +246,8 @@ export function deserialize(json) {
 function assertOpenPlot(state, index) {
   if (!Number.isInteger(index) || index < 0 || index >= MAX_PLOTS) throw new GameError('No such plot.');
   if (index >= plotCount(state.level)) {
-    throw new GameError(`This plot unlocks at level ${levelUnlockingPlot(index)}.`);
+    const lv = levelUnlockingPlot(index);
+    throw new GameError(lv === null ? 'That plot never opens.' : `This plot unlocks at level ${lv}.`);
   }
 }
 

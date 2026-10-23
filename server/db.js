@@ -35,7 +35,33 @@ export function openDb(file) {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS farms_xp ON farms (xp DESC);
+
+    -- Saved settings, e.g. the economy the admin dashboard edits.
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    -- Running daily totals for the dashboard (pulls, coins in/out, new players, ...).
+    CREATE TABLE IF NOT EXISTS daily_stats (
+      day   TEXT NOT NULL,
+      key   TEXT NOT NULL,
+      value REAL NOT NULL,
+      PRIMARY KEY (day, key)
+    );
+
+    -- Every change made from the admin dashboard.
+    CREATE TABLE IF NOT EXISTS admin_log (
+      id         INTEGER PRIMARY KEY,
+      at         INTEGER NOT NULL,
+      admin      TEXT NOT NULL,
+      action     TEXT NOT NULL,
+      details    TEXT NOT NULL
+    );
   `);
+  // Added after launch: the admin flag on accounts.
+  const cols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+  if (!cols.includes('is_admin')) db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
 
   const q = {
     insertUser: db.prepare('INSERT INTO users (created_at) VALUES (?)'),
@@ -54,6 +80,20 @@ export function openDb(file) {
     top: db.prepare('SELECT user_id, name, level, xp FROM farms ORDER BY xp DESC, user_id ASC LIMIT ?'),
     rankOf: db.prepare('SELECT COUNT(*) AS ahead FROM farms WHERE xp > ?'),
     farmCount: db.prepare('SELECT COUNT(*) AS n FROM farms'),
+    getSetting: db.prepare('SELECT value FROM settings WHERE key = ?'),
+    putSetting: db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value'),
+    bumpStat: db.prepare(`INSERT INTO daily_stats (day, key, value) VALUES (?, ?, ?)
+      ON CONFLICT (day, key) DO UPDATE SET value = value + excluded.value`),
+    statsSince: db.prepare('SELECT day, key, value FROM daily_stats WHERE day >= ? ORDER BY day'),
+    statTotals: db.prepare('SELECT key, SUM(value) AS value FROM daily_stats GROUP BY key'),
+    setAdmin: db.prepare('UPDATE users SET is_admin = ? WHERE username = ?'),
+    isAdmin: db.prepare('SELECT is_admin FROM users WHERE id = ?'),
+    allFarms: db.prepare(`SELECT f.user_id, f.state, f.updated_at, u.username, u.created_at, u.is_admin
+      FROM farms f JOIN users u ON u.id = f.user_id`),
+    farmRow: db.prepare(`SELECT f.user_id, f.state, f.updated_at, u.username, u.created_at, u.is_admin
+      FROM farms f JOIN users u ON u.id = f.user_id WHERE f.user_id = ?`),
+    addLog: db.prepare('INSERT INTO admin_log (at, admin, action, details) VALUES (?, ?, ?, ?)'),
+    recentLog: db.prepare('SELECT at, admin, action, details FROM admin_log ORDER BY id DESC LIMIT ?'),
   };
 
   return {
@@ -86,6 +126,23 @@ export function openDb(file) {
       return q.rankOf.get(xp).ahead + 1;
     },
     farmCount: () => q.farmCount.get().n,
+    getSetting(key) {
+      const row = q.getSetting.get(key);
+      return row ? JSON.parse(row.value) : null;
+    },
+    putSetting: (key, value) => q.putSetting.run(key, JSON.stringify(value)),
+    // Add amounts to today's running totals, e.g. { 'pulls:pico': 3, coins_out: 60 }.
+    bumpStats(day, amounts) {
+      for (const [key, value] of Object.entries(amounts)) if (value) q.bumpStat.run(day, key, value);
+    },
+    statsSince: (day) => q.statsSince.all(day),
+    statTotals: () => Object.fromEntries(q.statTotals.all().map(r => [r.key, r.value])),
+    setAdmin: (username, on) => q.setAdmin.run(on ? 1 : 0, username).changes,
+    isAdmin: (userId) => Boolean(q.isAdmin.get(userId)?.is_admin),
+    allFarms: () => q.allFarms.all(),
+    farmRow: (userId) => q.farmRow.get(userId),
+    addLog: (admin, action, details, now) => q.addLog.run(now, admin, action, JSON.stringify(details)),
+    recentLog: (limit) => q.recentLog.all(limit).map(r => ({ ...r, details: JSON.parse(r.details) })),
     close: () => db.close(),
   };
 }

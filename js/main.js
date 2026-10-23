@@ -3,9 +3,10 @@
 import * as G from './game.js';
 import {
   GAME_NAME, RARITIES, RARITY, TIERS, TIER, CROP, CROPS, ITEMS, HARVEST_GEMS,
-  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ELIXIR_HOURS,
+  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ELIXIR_HOURS, ECON, CHESTS,
 } from './data.js';
 import { applyAction, firstEmptyPlot, seedsBestFirst, MAX_BATCH } from './actions.js';
+import { applyEconomy } from './economy.js';
 import { spriteImg, uiSlice } from './sprites.js';
 import {
   SCENE_W, SCENE_H, PLOT_POS, PLOT_SIZE, FARMER_POS, FARMER_SIGN_POS, ZONES, drawFarm, drawValley,
@@ -99,9 +100,24 @@ function checkBuild(build) {
   location.reload();
 }
 
+// The server owns prices and odds. When a reply carries a new economy version, fetch the
+// settings, apply them, and redraw so every number on screen matches the server.
+let econ = null;
+async function syncEconomy(version) {
+  const data = await api('GET', '/economy');
+  applyEconomy(data.economy);
+  econ = version || data.econ;
+}
+function checkEconomy(version) {
+  if (!version || version === econ || econ === null) return;
+  econ = version;
+  syncEconomy(version).then(() => { if (!spin) refresh(); }).catch(() => { econ = null; });
+}
+
 // Take the farm (and clock) from a server response.
 function adopt(data) {
   checkBuild(data.build);
+  checkEconomy(data.econ);
   if (data.state) state = data.state;
   if (data.user) user = data.user;
   if (typeof data.now === 'number') clockOffset = data.now - Date.now();
@@ -109,6 +125,7 @@ function adopt(data) {
 
 // Resume the saved session, or start a guest farm.
 async function connect() {
+  await syncEconomy();
   if (storedToken()) {
     try {
       adopt(await api('GET', '/me'));
@@ -226,6 +243,7 @@ function renderValley() {
 // --- Farm --------------------------------------------------------------------
 
 function plotState(i, t) {
+  if (G.levelUnlockingPlot(i) === null) return { kind: 'never' };
   if (i >= G.plotCount(state.level)) return { kind: 'locked' };
   const plot = state.plots[i];
   if (!plot) return { kind: 'empty' };
@@ -238,6 +256,8 @@ function plotHTML(i, t) {
   const { x, y } = PLOT_POS[i];
   const pos = `style="left:${sp(x - PLOT_SIZE / 2)};top:${spY(y - PLOT_SIZE / 2)};width:${sp(PLOT_SIZE)};height:${spY(PLOT_SIZE)}"`;
   let sig, inner, cls, label;
+  // Spots that never open stay as bare furrow (kept in the DOM so updates line up).
+  if (s.kind === 'never') return `<button class="plot never" data-plot="${i}" data-sig="never" tabindex="-1" aria-hidden="true" ${pos}></button>`;
   if (s.kind === 'locked') {
     sig = 'locked'; cls = 'locked'; label = `Locked plot, level ${G.levelUnlockingPlot(i)}`;
     inner = spriteImg('plot_lock', 48);
@@ -420,7 +440,7 @@ function renderCropPanel() {
 
 function renderMarket() {
   const level = state.level;
-  const scale = G.rtp(level) / 0.9556;
+  const scale = G.rtp(level) / ECON.baseRtp;
   view.innerHTML = `
     <h2 class="section-title">Seed Vendor</h2>
     <div class="cards">
@@ -446,7 +466,7 @@ function renderMarket() {
       }).join('')}
       <div class="card wide">
         <h4>Drop odds</h4>
-        <div class="muted">Every pack uses the same odds. Your RTP at level ${level} is <b>${pct(G.rtp(level))}</b> (max 99.00% at level ${MAX_LEVEL}).</div>
+        <div class="muted">Every pack uses the same odds. Your RTP at level ${level} is <b>${pct(G.rtp(level))}</b> (${pct(G.rtp(MAX_LEVEL))} at level ${MAX_LEVEL}).</div>
         <table class="odds">
           <thead><tr><th>Rarity</th><th class="num">Chance</th><th class="num">Grow</th><th class="num">Return</th><th>Crops</th></tr></thead>
           <tbody>
@@ -598,11 +618,10 @@ function renderHouse() {
     const L = idx + 1;
     total += c;
     const unlocks = [];
-    if (L % 2 === 0 && L <= 30) unlocks.push('+1 plot');
-    if (L === 10) unlocks.push('Bronze chest');
-    if (L === 20) unlocks.push('Silver chest');
-    if (L === 30) unlocks.push('Gold chest');
-    if (L === MAX_LEVEL) unlocks.push('RTP cap');
+    if (G.plotCount(L) > G.plotCount(L - 1)) unlocks.push('+1 plot');
+    const chest = CHESTS.find(c => c.minLevel === L && L > 0);
+    if (chest) unlocks.push(`${chest.label} chest`);
+    if (L === MAX_LEVEL) unlocks.push('Max harvest bonus');
     const cls = L <= lv ? 'done' : L === lv + 1 ? 'current' : '';
     return `<tr class="${cls}"><td>${L}</td><td class="num">${fmt(c)}</td><td class="num">${fmt(total)}</td><td class="num">${pct(G.rtp(L))}</td><td class="num">${G.plotCount(L)}</td><td>${unlocks.join(', ') || '—'}</td></tr>`;
   }).join('');
@@ -620,7 +639,7 @@ function renderHouse() {
             <tr><td>Plots</td><td class="num">${G.plotCount(lv)}</td><td class="num">${G.plotCount(lv + 1)}</td></tr>
           </table>
           <div class="segbar long"><i class="on" style="flex:${Math.min(1, state.coins / cost)}"></i><i style="flex:${Math.max(0, 1 - state.coins / cost)}"></i></div>
-          <div class="muted">Level-up reward: ${gem(10 * (lv + 1), 14)}</div>
+          <div class="muted">Level-up reward: ${gem(ECON.levelUpGemsPerLevel * (lv + 1), 14)}</div>
           <div class="actions"><button class="btn orange" data-action="level-up" ${state.coins < cost ? 'disabled' : ''}>Level up ${spriteImg('coin', 16)} ${fmt(cost)}</button></div>`}
       </div>
       <div class="card">

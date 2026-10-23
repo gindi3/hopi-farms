@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 import * as G from '../js/game.js';
 import { applyAction } from '../js/actions.js';
 import { openDb } from './db.js';
+import { adminRoutes, actionStats, dayOf } from './admin.js';
+import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY } from '../js/economy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const STATIC_DIRS = new Set(['css', 'js']);
@@ -46,7 +48,7 @@ const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
 // deploy gets fresh URLs and no browser or CDN cache can serve stale code.
 export function computeBuild(root = ROOT) {
   const hash = createHash('sha256');
-  const files = ['index.html'];
+  const files = ['index.html', 'admin.html'];
   for (const dir of STATIC_DIRS) {
     for (const name of readdirSync(join(root, dir)).sort()) files.push(`${dir}/${name}`);
   }
@@ -64,6 +66,15 @@ export function createServer({
 } = {}) {
   const store = openDb(dbFile);
   const build = computeBuild();
+
+  // The economy is shared module state: start from the saved one (or the defaults).
+  try {
+    applyEconomy(store.getSetting('economy') || DEFAULT_ECONOMY);
+  } catch (e) {
+    log.error('Saved economy is invalid; using defaults.', e);
+    applyEconomy(DEFAULT_ECONOMY);
+  }
+  let econ = economyVersion(snapshotEconomy());
   const limits = new RateLimiter();
   const rng = () => randomInt(0, 2 ** 47) / 2 ** 47;
 
@@ -113,6 +124,7 @@ export function createServer({
       const userId = store.createUser(now);
       const state = G.newGame();
       store.putFarm(userId, state, now);
+      store.bumpStats(dayOf(now), { new_players: 1 });
       return ok({ token: newSession(userId), user: userInfo(userId), state, now });
     },
 
@@ -124,8 +136,10 @@ export function createServer({
       const state = loadFarm(userId);
       const now = Date.now();
       try {
+        const before = { coins: state.coins, gems: state.gems };
         const result = applyAction(state, body, { now, rng, speed: devSpeed });
         store.putFarm(userId, state, now);
+        store.bumpStats(dayOf(now), actionStats(body, before, state, result));
         return ok({ state, result, now });
       } catch (e) {
         if (e instanceof G.GameError) return bad(e.message);
@@ -143,6 +157,7 @@ export function createServer({
       if (password.length < 8 || password.length > 200) return bad('Passwords need at least 8 characters.');
       if (store.userByName(username)) return bad('That username is taken.');
       store.setCredentials(userId, username, hashPassword(password));
+      store.bumpStats(dayOf(Date.now()), { registrations: 1 });
       return ok({ user: userInfo(userId) });
     },
 
@@ -161,6 +176,9 @@ export function createServer({
       return ok({});
     },
 
+    // Current prices and odds, so every client computes the same numbers as the server.
+    'GET /api/economy': () => ok({ economy: snapshotEconomy() }),
+
     'GET /api/leaderboard': (req, { userId }) => {
       const rows = store.leaderboard(25);
       const top = rows.map((r, i) => ({ rank: i + 1, name: r.name, level: r.level, xp: r.xp, you: r.user_id === userId }));
@@ -172,7 +190,11 @@ export function createServer({
       return ok({ top, you, players: store.farmCount() });
     },
   };
-  const PUBLIC = new Set(['POST /api/guest', 'POST /api/login', 'POST /api/logout', 'GET /api/leaderboard']);
+  const PUBLIC = new Set(['POST /api/guest', 'POST /api/login', 'POST /api/logout', 'GET /api/leaderboard', 'GET /api/economy']);
+  const admin = adminRoutes({
+    store, ok, bad, loadFarm,
+    onEconomyChange: () => { econ = economyVersion(snapshotEconomy()); },
+  });
 
   // --- HTTP plumbing ---------------------------------------------------------
 
@@ -190,14 +212,16 @@ export function createServer({
 
       if (url.pathname.startsWith('/api/')) {
         const key = `${req.method} ${url.pathname}`;
-        const handler = routes[key];
+        const isAdminRoute = url.pathname.startsWith('/api/admin/');
+        const handler = isAdminRoute ? admin[key] : routes[key];
         if (!handler) return send(res, bad('Not found.', 404));
         const userId = sessionUserId(req);
         if (!userId && !PUBLIC.has(key)) return send(res, bad('Please sign in again.', 401));
+        if (isAdminRoute && !store.isAdmin(userId)) return send(res, bad('This account is not an admin.', 403));
         const body = req.method === 'POST' ? await readJson(req) : null;
         if (body === INVALID) return send(res, bad('Bad request body.'));
-        const out = handler(req, { userId, body });
-        if (out.status === 200 && out.json) out.json.build = build;
+        const out = handler(req, { userId, body, url });
+        if (out.status === 200 && out.json) Object.assign(out.json, { build, econ });
         return send(res, out);
       }
 
@@ -212,11 +236,11 @@ export function createServer({
         if (file.status === 200 && v[1] === build) file.cache = 'public, max-age=31536000, immutable';
         return send(res, file);
       }
-      if (url.pathname === '/' || url.pathname === '/index.html') {
-        const page = await staticFile('/index.html');
+      const pages = { '/': 'index.html', '/index.html': 'index.html', '/admin': 'admin.html', '/admin.html': 'admin.html' };
+      if (pages[url.pathname]) {
+        const page = await staticFile(`/${pages[url.pathname]}`);
         page.body = String(page.body)
-          .replace('href="css/style.css"', `href="/v/${build}/css/style.css"`)
-          .replace('src="js/main.js"', `src="/v/${build}/js/main.js"`);
+          .replace(/(href|src)="((?:css|js)\/[^"]+)"/g, `$1="/v/${build}/$2"`);
         return send(res, page);
       }
       return send(res, await staticFile(url.pathname));
@@ -227,6 +251,7 @@ export function createServer({
   });
 
   server.on('close', () => store.close());
+  server.store = store;   // for tests and the admin CLI-style setup in tests
   return server;
 }
 
@@ -277,7 +302,7 @@ function readJson(req) {
 async function staticFile(pathname) {
   let rel = pathname === '/' ? 'index.html' : normalize(decodeURIComponent(pathname)).replace(/^[/\\]+/, '');
   const top = rel.split(/[/\\]/)[0];
-  if (rel !== 'index.html' && !STATIC_DIRS.has(top)) return bad('Not found.', 404);
+  if (rel !== 'index.html' && rel !== 'admin.html' && !STATIC_DIRS.has(top)) return bad('Not found.', 404);
   const file = join(ROOT, rel);
   if (!file.startsWith(ROOT + '/')) return bad('Not found.', 404);
   const type = TYPES[extname(file)];

@@ -172,3 +172,87 @@ test('a single pull still reports cropId at the top for older pages', async () =
   assert.equal(r.data.result.cropId, r.data.result.results[0].cropId);
   assert.ok(r.data.result.rarity);
 });
+
+// --- Admin dashboard API ---------------------------------------------------------------
+
+async function adminToken() {
+  const g = await guest();
+  const username = `admin_${Math.floor(Math.random() * 1e6)}`;
+  await call('POST', '/api/register', { token: g.token, body: { username, password: 'adminpass1' } });
+  server.store.setAdmin(username, true);
+  return g.token;
+}
+
+test('admin routes refuse players who are not admins', async () => {
+  const g = await guest();
+  assert.equal((await call('GET', '/api/admin/overview', { token: g.token })).status, 403);
+  assert.equal((await call('GET', '/api/admin/overview')).status, 401);
+  assert.equal((await call('POST', '/api/admin/economy', { token: g.token, body: {} })).status, 403);
+});
+
+test('admin overview and stats reflect activity', async () => {
+  const admin = await adminToken();
+  const g = await guest();
+  await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'pico', count: 2 } });
+  const o = await call('GET', '/api/admin/overview', { token: admin });
+  assert.equal(o.status, 200);
+  assert.ok(o.data.players.total >= 2);
+  assert.ok(o.data.realized.packSpend >= 40);
+  const st = await call('GET', '/api/admin/stats?days=7', { token: admin });
+  const today = st.data.days.at(-1);
+  assert.ok(today['pulls:pico'] >= 2);
+  assert.ok(today.new_players >= 2);
+});
+
+test('admin can change prices; everyone gets them; bad configs are refused', async () => {
+  const admin = await adminToken();
+  const g = await guest();
+  const { data } = await call('GET', '/api/admin/economy', { token: admin });
+  const econ = data.economy;
+  const before = (await call('GET', '/api/me', { token: g.token })).data.econ;
+
+  const bad = structuredClone(econ);
+  bad.rarity.common.chance = 0.5;   // chances no longer add up to 100%
+  const refused = await call('POST', '/api/admin/economy', { token: admin, body: { economy: bad } });
+  assert.equal(refused.status, 400);
+  assert.match(refused.data.error, /add up to 100%/);
+
+  const next = structuredClone(econ);
+  next.packCost.pico = 25;
+  const saved = await call('POST', '/api/admin/economy', { token: admin, body: { economy: next } });
+  assert.equal(saved.status, 200);
+  const pub = await call('GET', '/api/economy');
+  assert.equal(pub.data.economy.packCost.pico, 25);
+  const buy = await call('POST', '/api/action', { token: g.token, body: { type: 'buyOpen', tier: 'pico' } });
+  assert.equal(buy.data.state.coins, 75);
+  assert.notEqual(buy.data.econ, before);   // clients see a new economy version
+
+  const log = await call('GET', '/api/admin/log', { token: admin });
+  assert.ok(log.data.log[0].details.some(d => d.startsWith('packCost.pico: 20 → 25')));
+
+  const reset = await call('POST', '/api/admin/economy/reset', { token: admin });
+  assert.equal(reset.data.economy.packCost.pico, 20);
+});
+
+test('admin can search players and adjust a farm', async () => {
+  const admin = await adminToken();
+  const g = await guest();
+  await call('POST', '/api/action', { token: g.token, body: { type: 'rename', name: 'Findable Farm' } });
+  const found = await call('GET', '/api/admin/players?q=findable', { token: admin });
+  assert.equal(found.data.rows.length, 1);
+  const id = found.data.rows[0].id;
+  const adj = await call('POST', '/api/admin/player/adjust', { token: admin, body: { id, coins: 50, gems: 5, name: 'Renamed', reason: 'test' } });
+  assert.equal(adj.status, 200);
+  const me = await call('GET', '/api/me', { token: g.token });
+  assert.equal(me.data.state.coins, 150);
+  assert.equal(me.data.state.gems, 5);
+  assert.equal(me.data.state.name, 'Renamed');
+  const detail = await call('GET', `/api/admin/player?id=${id}`, { token: admin });
+  assert.equal(detail.data.player.name, 'Renamed');
+});
+
+test('the admin page is served with versioned code', async () => {
+  const page = await call('GET', '/admin');
+  assert.equal(page.status, 200);
+  assert.match(page.data, /src="\/v\/[0-9a-f]+\/js\/admin\.js"/);
+});

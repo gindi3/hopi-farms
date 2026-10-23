@@ -231,6 +231,7 @@ main { grid-area: main; min-width: 0; }
 .plot img { width: 100%; height: 100%; }
 .plot.empty:hover img, .plot.growing:hover img { filter: brightness(1.15) drop-shadow(0 0 2px #fff6c0); }
 .plot.locked { cursor: not-allowed; }
+.plot.never { visibility: hidden; pointer-events: none; }
 .plot.ready img { animation: bob 1.1s steps(4) infinite; filter: drop-shadow(0 0 3px #fff6c0); }
 .plot .bar {
   position: absolute;

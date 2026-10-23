@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Hopi Farms Admin</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">Hopi Farms <span>Admin</span></div>
+    <nav class="tabs" id="tabs" hidden>
+      <button data-tab="overview" class="active">Overview</button>
+      <button data-tab="economy">Economy</button>
+      <button data-tab="pricing">Pricing</button>
+      <button data-tab="players">Players</button>
+      <button data-tab="leaders">Leaderboard</button>
+      <button data-tab="log">Admin log</button>
+    </nav>
+    <div class="who" id="who"></div>
+  </header>
+
+  <main id="view"><p class="muted">Loading…</p></main>
+  <div id="tip" class="tip" hidden></div>
+  <div id="toasts" class="toasts"></div>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

@@ -41,7 +41,6 @@ below 1%. The fun is in the variance, the progression and the free seeds from ch
 | **Tavern** | Potions Master | Burn produce to craft consumables (see §7). |
 | **House** | Gardener | Pay coins to level up the Valley (see §6). |
 | | Daily Chest | Claim one chest per day. Its tier depends on Valley level (see §8). |
-| | Referrals | Sponsors get **1% cashback** on everything their referrals spend. |
 | | Inventory | Seeds, produce, consumables, chests. |
 
 ### Farm screen layout (screenshot)
@@ -94,24 +93,23 @@ limit we don't need.)
 
 ---
 
-## 4. RTP and the 99.0% cap
+## 4. RTP and the harvest bonus
 
 ```
-RTP = min(95.56% + 0.10% × Valley level, 99.0%)
+RTP = min(95.56% × (1 + 0.25% × Valley level), cap)      cap defaults to 100%
 ```
 
-| Level | 0 | 1 | 5 | 10 | 15 | 20 | 25 | 30 | 34 | 35 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| RTP | 95.56% | 95.66% | 96.06% | 96.56% | 97.06% | 97.56% | 98.06% | 98.56% | 98.96% | **99.00%** |
+Each valley level adds +0.25% to every harvest payout, up to +3.75% at level 15:
 
-- The level bonus adds percentage points: every crop's payout is scaled by `RTP / 95.56%`. For
-  example, at level 35 a Potato pays 10 × 99.0 / 95.56 = 10.36.
-- Level 35 would compute to 99.06%, so the cap clips it to 99.0%.
-- **The cap covers every coin boost combined.** Nothing (consumables, characters, events) may push
-  expected coin return above 99.0%. That's why the Fertilizer and Characters below boost produce and
-  XP instead of coins, and why the gem option is a same-rarity swap instead of a reroll (§5).
-- The original's level bonus was much bigger (+0.25% per level in multiplier terms), plus locked
-  rewards on top. Ours is a much tighter economy.
+| Level | 0 | 1 | 5 | 10 | 15 |
+|---|---|---|---|---|---|
+| RTP | 95.56% | 95.80% | 96.75% | 97.95% | **99.14%** |
+
+- Even at level 15 the game keeps a 0.86% edge. The 100% cap is a safety limit for edits
+  made on the admin dashboard, so no setting can make packs pay more than they cost.
+- **Every coin boost counts toward the cap** (consumables, characters, events). That's why
+  the Fertilizer and Characters boost produce and XP instead of coins, and why the gem
+  option is a same-rarity swap instead of a reroll (§5).
 
 ### Coin faucets (needed, since RTP < 100%)
 With every pack losing a little, coins have to enter the game from somewhere besides harvests:
@@ -173,58 +171,30 @@ The harvest drop only scales a little with tier, so cheap packs still feel worth
 
 ## 6. Progression
 
-**Valley level (Gardener)** is bought with coins. Players start at level 0 (95.56% RTP, 15 plots).
-Max level is **35**. Every level gives **+0.10% RTP** and **10 × the new level in gems**.
+**Valley level (Gardener)** is bought with coins. Players start at level 0 (15 plots).
+Max level is **15**. Every level gives **+0.25% harvest**, **+1 plot** and **10 × the new level
+in gems**. All 30 plots are open at level 15. Costs follow the original's curve, 7,550 in total.
 
-Levels 1–15 keep the original's costs. From level 16 on, each level costs 250 more than the last.
-Even levels up to 30 add a plot, which fills the 15 locked plots on the farm screen.
+| Level | Cost | Total | Harvest bonus | RTP | Plots | Unlocks |
+|---|---|---|---|---|---|---|
+| 1 | 100 | 100 | +0.25% | 95.80% | 16 | — |
+| 2 | 125 | 225 | +0.50% | 96.04% | 17 | — |
+| 3 | 150 | 375 | +0.75% | 96.28% | 18 | — |
+| 4 | 175 | 550 | +1.00% | 96.52% | 19 | — |
+| 5 | 250 | 800 | +1.25% | 96.75% | 20 | Bronze chest |
+| 6 | 300 | 1,100 | +1.50% | 96.99% | 21 | — |
+| 7 | 350 | 1,450 | +1.75% | 97.23% | 22 | — |
+| 8 | 400 | 1,850 | +2.00% | 97.47% | 23 | — |
+| 9 | 450 | 2,300 | +2.25% | 97.71% | 24 | — |
+| 10 | 600 | 2,900 | +2.50% | 97.95% | 25 | Silver chest |
+| 11 | 700 | 3,600 | +2.75% | 98.19% | 26 | — |
+| 12 | 800 | 4,400 | +3.00% | 98.43% | 27 | — |
+| 13 | 900 | 5,300 | +3.25% | 98.67% | 28 | — |
+| 14 | 1,000 | 6,300 | +3.50% | 98.90% | 29 | — |
+| 15 | 1,250 | 7,550 | +3.75% | 99.14% | 30 | Gold chest, max bonus |
 
-| Level | Cost | Total | RTP | Plots | Unlocks |
-|---|---|---|---|---|---|
-| 1 | 100 | 100 | 95.66% | 15 | — |
-| 2 | 125 | 225 | 95.76% | 16 | +1 plot |
-| 3 | 150 | 375 | 95.86% | 16 | — |
-| 4 | 175 | 550 | 95.96% | 17 | +1 plot |
-| 5 | 250 | 800 | 96.06% | 17 | Referrals |
-| 6 | 300 | 1,100 | 96.16% | 18 | +1 plot |
-| 7 | 350 | 1,450 | 96.26% | 18 | — |
-| 8 | 400 | 1,850 | 96.36% | 19 | +1 plot |
-| 9 | 450 | 2,300 | 96.46% | 19 | — |
-| 10 | 600 | 2,900 | 96.56% | 20 | +1 plot, Bronze chest |
-| 11 | 700 | 3,600 | 96.66% | 20 | — |
-| 12 | 800 | 4,400 | 96.76% | 21 | +1 plot |
-| 13 | 900 | 5,300 | 96.86% | 21 | — |
-| 14 | 1,000 | 6,300 | 96.96% | 22 | +1 plot |
-| 15 | 1,250 | 7,550 | 97.06% | 22 | — |
-| 16 | 1,500 | 9,050 | 97.16% | 23 | +1 plot |
-| 17 | 1,750 | 10,800 | 97.26% | 23 | — |
-| 18 | 2,000 | 12,800 | 97.36% | 24 | +1 plot |
-| 19 | 2,250 | 15,050 | 97.46% | 24 | — |
-| 20 | 2,500 | 17,550 | 97.56% | 25 | +1 plot, Silver chest |
-| 21 | 2,750 | 20,300 | 97.66% | 25 | — |
-| 22 | 3,000 | 23,300 | 97.76% | 26 | +1 plot |
-| 23 | 3,250 | 26,550 | 97.86% | 26 | — |
-| 24 | 3,500 | 30,050 | 97.96% | 27 | +1 plot |
-| 25 | 3,750 | 33,800 | 98.06% | 27 | — |
-| 26 | 4,000 | 37,800 | 98.16% | 28 | +1 plot |
-| 27 | 4,250 | 42,050 | 98.26% | 28 | — |
-| 28 | 4,500 | 46,550 | 98.36% | 29 | +1 plot |
-| 29 | 4,750 | 51,300 | 98.46% | 29 | — |
-| 30 | 5,000 | 56,300 | 98.56% | 30 | +1 plot, Gold chest |
-| 31 | 5,250 | 61,550 | 98.66% | 30 | — |
-| 32 | 5,500 | 67,050 | 98.76% | 30 | — |
-| 33 | 5,750 | 72,800 | 98.86% | 30 | — |
-| 34 | 6,000 | 78,800 | 98.96% | 30 | — |
-| 35 | 6,250 | 85,050 | 99.00% | 30 | RTP cap |
-
-(Gem plots from §5 can add up to 3 more, for a maximum of 33.)
-
-**Levels never pay for themselves in RTP.** At level 35, a player's whole 85k-coin investment buys
-3.44 extra points of RTP, which still leaves them below break-even. What levels really buy is plots,
-chest tiers and status. That's fine, as long as players see levels as progression, not an
-investment.
-
-The cost curve for levels 16–35 and the plot schedule are my proposal. Adjust as needed.
+Hopi Farms has no referrals and no Sage. Everything here can be changed on the admin
+dashboard's Pricing tab.
 
 **Farmer XP** comes from opening packs, harvesting, buying on the P2P market and crafting potions
 (+75 / +250 / +2,000). It gates future content.
@@ -273,7 +243,6 @@ Every chest also contains gems (see §5) on top of its loot roll:
 |---|---|
 | Seed pack spend | Fully burnt (no staking cut) |
 | P2P market purchase | 5% burnt |
-| Referral cashback | 1% to the sponsor |
 | Valley upgrades | Burnt |
 
 ---
