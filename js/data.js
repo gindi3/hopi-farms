@@ -82,6 +82,7 @@ export const ECON = {
   rtpCap: 1.0,
   firstHarvestGems: 2,
   levelUpGemsPerLevel: 10,
+  skipGemsPerHour: 1,       // gems to skip each hour (or part) of growing with Finish now
   farmCost: 500,            // $CROP to open each farm after the first (keep above starter $CROP)
 };
 export const MAX_LEVEL = 15;

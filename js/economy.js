@@ -21,6 +21,7 @@ export function snapshotEconomy() {
     },
     firstHarvestGems: ECON.firstHarvestGems,
     levelUpGemsPerLevel: ECON.levelUpGemsPerLevel,
+    skipGemsPerHour: ECON.skipGemsPerHour,
     starterCoins: STARTER.coins,
     farmCost: ECON.farmCost,
     chestGems: Object.fromEntries(CHESTS.map(c => [c.id, [...c.gems]])),
@@ -74,6 +75,7 @@ export function validateEconomy(cfg) {
   }
   num(cfg.firstHarvestGems, 'First-harvest gems', { min: 0, max: 1e6, int: true });
   num(cfg.levelUpGemsPerLevel, 'Level-up gems per level', { min: 0, max: 1e6, int: true });
+  num(cfg.skipGemsPerHour, 'Gems per hour skipped', { min: 1, max: 1e6, int: true });
   num(cfg.starterCoins, 'Starter $CROP', { min: 0, max: 1e9 });
   num(cfg.farmCost, 'New farm price', { min: 0, max: 1e9 });
   for (const c of CHESTS) {
@@ -100,6 +102,7 @@ export function applyEconomy(cfg) {
   Object.assign(HARVEST_GEMS.legendary, cfg.harvestGems.legendary);
   ECON.firstHarvestGems = cfg.firstHarvestGems;
   ECON.levelUpGemsPerLevel = cfg.levelUpGemsPerLevel;
+  ECON.skipGemsPerHour = cfg.skipGemsPerHour;
   STARTER.coins = cfg.starterCoins;
   ECON.farmCost = cfg.farmCost;
   for (const c of CHESTS) c.gems = [...cfg.chestGems[c.id]];

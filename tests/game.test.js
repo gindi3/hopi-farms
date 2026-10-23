@@ -237,3 +237,16 @@ test('a save from before multiple farms loads as Farm 1', () => {
   const round = G.deserialize(G.serialize(back));
   assert.deepEqual(round, back);
 });
+
+test('finish now cost follows the gems-per-hour setting', async () => {
+  const { ECON } = await import('../js/data.js');
+  const s = G.newGame();
+  G.plant(s, 0, 'f_potato', 0);                       // 3h crop
+  assert.equal(G.finishNowCost(s.plots[0], 0.5 * 3600e3), 3);
+  ECON.skipGemsPerHour = 25;
+  try {
+    assert.equal(G.finishNowCost(s.plots[0], 0.5 * 3600e3), 75);
+  } finally {
+    ECON.skipGemsPerHour = 1;
+  }
+});

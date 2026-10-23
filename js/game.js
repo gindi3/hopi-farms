@@ -214,9 +214,10 @@ export function harvest(state, plotIndex, now, rng = Math.random) {
   return { cropId: crop.id, coins, gems, xp, produce, firstTime };
 }
 
+// Finish now costs ECON.skipGemsPerHour gems for each hour (or part of one) still to grow.
 export function finishNowCost(plot, now) {
   const { msLeft } = plotProgress(plot, now);
-  return Math.ceil(msLeft / HOUR_MS);
+  return Math.ceil(msLeft / HOUR_MS) * ECON.skipGemsPerHour;
 }
 
 export function finishNow(state, plotIndex, now) {

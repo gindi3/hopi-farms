@@ -363,6 +363,7 @@ async function renderPricing() {
           <div class="form-grid" style="margin-top:10px">
             <div class="field"><label>First harvest of a crop</label>${inp('firstHarvestGems', draft.firstHarvestGems, { step: 1 })}</div>
             <div class="field"><label>Level-up (× new level)</label>${inp('levelUpGemsPerLevel', draft.levelUpGemsPerLevel, { step: 1 })}</div>
+            <div class="field"><label>Gems per hour skipped (Finish now)</label>${inp('skipGemsPerHour', draft.skipGemsPerHour, { step: 1, min: 1 })}</div>
           </div>
           <h3 style="margin-top:14px">Daily chest gems (min – max)</h3>
           <div class="form-grid">${CHESTS.map(c => `<div class="field"><label>${c.label} (Lv ${c.minLevel}+)</label><div class="row" style="flex-wrap:nowrap">${inp(`chestGems.${c.id}.0`, draft.chestGems[c.id][0], { step: 1, w: '64px' })}–${inp(`chestGems.${c.id}.1`, draft.chestGems[c.id][1], { step: 1, w: '64px' })}</div></div>`).join('')}</div>
@@ -412,6 +413,7 @@ function renderPreview() {
       <dt>RTP at level 10</dt><dd>${pct(rtp(draft, base, 10))}${delta(rtp(draft, base, 10), rtp(saved, baseNow, 10))}</dd>
       <dt>RTP at level ${MAX_LEVEL}</dt><dd>${pct(rtp(draft, base, MAX_LEVEL))}${delta(rtp(draft, base, MAX_LEVEL), rtp(saved, baseNow, MAX_LEVEL))}</dd>
       <dt>Average grow time</dt><dd>${avgHours.toFixed(2)}h</dd>
+      <dt>Finish now cost</dt><dd>${fmt(draft.skipGemsPerHour, 0)} gem${draft.skipGemsPerHour === 1 ? '' : 's'}/hour · a 24h Legendary: ${fmt(24 * draft.skipGemsPerHour, 0)} gems</dd>
       ${TIERS.map(t => `<dt>${TIER[t].label}: back per pack</dt><dd>${fmt(draft.packCost[t] * base)} of ${fmt(draft.packCost[t])}</dd>`).join('')}
     </dl>
     ${draft.farmCost <= draft.starterCoins ? `<p class="bad" style="margin-top:12px">A new farm costs ${fmt(draft.farmCost)} but gives ${fmt(draft.starterCoins)} starter $CROP, so players can open farms for free $CROP. Set the price above the starter amount.</p>` : ''}
