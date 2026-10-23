@@ -1,0 +1,16 @@
+# Copies the Hopi Farms database to /var/lib/hopi-farms/backups, keeping 14 days.
+# Triggered daily by hopi-farms-backup.timer.
+[Unit]
+Description=Back up the Hopi Farms database
+
+[Service]
+Type=oneshot
+User=hopi
+Group=hopi
+WorkingDirectory=/opt/hopi-farms
+ExecStart=@NODE@ --disable-warning=ExperimentalWarning server/backup.js /var/lib/hopi-farms/hopi.db /var/lib/hopi-farms/backups 14
+StateDirectory=hopi-farms
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

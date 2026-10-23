@@ -1,0 +1,38 @@
+# Runs the Hopi Farms server. Installed by deploy/setup.sh to /etc/systemd/system/.
+# @NODE@ is replaced with the path to Node 22.13+ when installed.
+[Unit]
+Description=Hopi Farms game server
+After=network.target
+
+[Service]
+Type=simple
+User=hopi
+Group=hopi
+WorkingDirectory=/opt/hopi-farms
+ExecStart=@NODE@ --disable-warning=ExperimentalWarning server/index.js
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=5180
+Environment=HOPI_DB=/var/lib/hopi-farms/hopi.db
+Environment=HOPI_TRUST_PROXY=1
+Restart=always
+RestartSec=3
+
+# The database lives in /var/lib/hopi-farms (created and owned by systemd).
+StateDirectory=hopi-farms
+StateDirectoryMode=0750
+
+# Hardening: the app can read its code and write only its state directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
