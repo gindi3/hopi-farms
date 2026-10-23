@@ -240,7 +240,7 @@ export function deserialize(json) {
 // --- Helpers -----------------------------------------------------------------
 
 function assertOpenPlot(state, index) {
-  if (index < 0 || index >= MAX_PLOTS) throw new GameError('No such plot.');
+  if (!Number.isInteger(index) || index < 0 || index >= MAX_PLOTS) throw new GameError('No such plot.');
   if (index >= plotCount(state.level)) {
     throw new GameError(`This plot unlocks at level ${levelUnlockingPlot(index)}.`);
   }

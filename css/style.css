@@ -537,3 +537,24 @@ button.item:hover { filter: brightness(1.05); }
   .tabs button { flex: none; }
   .nameplate { min-width: 0; }
 }
+
+/* --- Profile forms and leaderboard ------------------------------------------ */
+
+.form { display: flex; flex-direction: column; gap: 10px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 18px; color: var(--ink-soft); }
+.form input {
+  font: inherit;
+  font-size: 22px;
+  color: var(--ink);
+  background: #fffaf0;
+  border: 3px solid var(--ink);
+  box-shadow: inset 0 3px 0 #e0cca4;
+  padding: 4px 8px;
+  border-radius: 0;
+}
+.form input:focus { outline: 3px solid #f2c94c; outline-offset: 0; }
+.form .btn { align-self: flex-start; }
+.form p { margin: 0; }
+hr.rule { border: 0; border-top: 2px solid #dcc69a; margin: 16px 0; }
+.leaders tr.you td { background: #fbe7a8; }
+.leaders tr.gap td { border-top: 4px dotted #c8ac7a; }

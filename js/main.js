@@ -5,17 +5,25 @@ import {
   GAME_NAME, RARITIES, RARITY, TIERS, TIER, CROP, CROPS, ITEMS, HARVEST_GEMS,
   MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ELIXIR_HOURS,
 } from './data.js';
+import { applyAction, firstEmptyPlot, seedsBestFirst } from './actions.js';
 import { spriteImg, uiSlice } from './sprites.js';
 import {
   SCENE_W, SCENE_H, PLOT_POS, PLOT_SIZE, FARMER_POS, FARMER_SIGN_POS, ZONES, drawFarm, drawValley,
 } from './scene.js';
 
 const SAVE_KEY = 'hopi-farms-save';
+const TOKEN_KEY = 'hopi-farms-token';
 const params = new URLSearchParams(location.search);
-// ?speed=N shortens grow times for testing; it only works on a local dev server.
+// ?speed=N shortens grow times for testing; it only works on a local dev server. In online
+// mode the server decides grow speed instead.
 const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
 const SPEED = IS_LOCAL ? Math.max(1, Number(params.get('speed')) || 1) : 1;
 const STAGE_NAMES = ['Seeded', 'Sprouting', 'Growing', 'Flowering', 'Ready'];
+
+// Online mode: config.js points at the server, which owns the farm. Local mode: the farm
+// lives in this browser's storage and the rules run here.
+const API = typeof window.HOPI_API === 'string' ? window.HOPI_API.replace(/\/$/, '') : '';
+const ONLINE = Boolean(API);
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $('#view');
@@ -23,10 +31,14 @@ const modal = $('#modal');
 const modalPanel = $('#modal-panel');
 const tooltip = $('#tooltip');
 
-let state = load() || G.newGame();
+let state = ONLINE ? G.newGame() : (load() || G.newGame());
+let user = null;       // { username, guest } in online mode
+let clockOffset = 0;   // server time minus local time, so timers match the server
 let tab = 'valley';
 let hoverPlot = null;
 let livePlot = null; // plot index shown in the crop panel, refreshed each tick
+
+const now = () => Date.now() + clockOffset;
 
 // --- Persistence -------------------------------------------------------------
 
@@ -43,17 +55,90 @@ function save() {
   try { localStorage.setItem(SAVE_KEY, G.serialize(state)); } catch { /* storage unavailable */ }
 }
 
-// Run a game action; show GameErrors as toasts, save and refresh on success.
-function act(fn) {
+function storedToken() {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
+function storeToken(token) {
   try {
-    const result = fn();
-    save();
-    renderHeader();
-    return result;
-  } catch (e) {
-    if (e instanceof G.GameError) { toast(e.message, true); return null; }
-    throw e;
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* storage unavailable */ }
+}
+
+// --- Server --------------------------------------------------------------------
+
+class ApiError extends Error {
+  constructor(message, status) { super(message); this.status = status; }
+}
+
+async function api(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  const token = storedToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch {
+    throw new ApiError("Can't reach the farm server. Check your connection.", 0);
   }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(data.error || 'Something went wrong.', res.status);
+  return data;
+}
+
+// Take the farm (and clock) from a server response.
+function adopt(data) {
+  if (data.state) state = data.state;
+  if (data.user) user = data.user;
+  if (typeof data.now === 'number') clockOffset = data.now - Date.now();
+}
+
+// Resume the saved session, or start a guest farm.
+async function connect() {
+  if (storedToken()) {
+    try {
+      adopt(await api('GET', '/me'));
+      return;
+    } catch (e) {
+      if (e.status !== 401) throw e;
+      storeToken(null);
+    }
+  }
+  const data = await api('POST', '/guest');
+  storeToken(data.token);
+  adopt(data);
+}
+
+// Run a game action, locally or on the server. Actions run one at a time, in click order.
+// Returns the action's result, or null after showing the error.
+let queue = Promise.resolve();
+function dispatch(action) {
+  const run = async () => {
+    try {
+      let result;
+      if (ONLINE) {
+        const data = await api('POST', '/action', action);
+        adopt(data);
+        result = data.result;
+      } else {
+        result = applyAction(state, action, { now: now(), speed: SPEED });
+        save();
+      }
+      renderHeader();
+      return result;
+    } catch (e) {
+      if (e instanceof G.GameError || e instanceof ApiError) {
+        toast(e.message, true);
+        if (e.status === 401) openProfile();
+        return null;
+      }
+      throw e;
+    }
+  };
+  const p = queue.then(run, run);
+  queue = p.catch(() => {});
+  return p;
 }
 
 // --- Formatting --------------------------------------------------------------
@@ -96,8 +181,8 @@ function renderHeader() {
   badge.hidden = !ready;
 }
 
-function readyCount(now = Date.now()) {
-  return state.plots.filter(p => p && G.plotProgress(p, now).ready).length;
+function readyCount(t = now()) {
+  return state.plots.filter(p => p && G.plotProgress(p, t).ready).length;
 }
 
 // --- Scenes ------------------------------------------------------------------
@@ -127,16 +212,16 @@ function renderValley() {
 
 // --- Farm --------------------------------------------------------------------
 
-function plotState(i, now) {
+function plotState(i, t) {
   if (i >= G.plotCount(state.level)) return { kind: 'locked' };
   const plot = state.plots[i];
   if (!plot) return { kind: 'empty' };
-  const prog = G.plotProgress(plot, now);
+  const prog = G.plotProgress(plot, t);
   return { kind: prog.ready ? 'ready' : 'growing', plot, prog };
 }
 
-function plotHTML(i, now) {
-  const s = plotState(i, now);
+function plotHTML(i, t) {
+  const s = plotState(i, t);
   const { x, y } = PLOT_POS[i];
   const pos = `style="left:${sp(x - PLOT_SIZE / 2)};top:${spY(y - PLOT_SIZE / 2)};width:${sp(PLOT_SIZE)};height:${spY(PLOT_SIZE)}"`;
   let sig, inner, cls, label;
@@ -162,9 +247,9 @@ function plotHTML(i, now) {
 }
 
 function renderFarm() {
-  const now = Date.now();
+  const t = now();
   let plots = '';
-  for (let i = 0; i < MAX_PLOTS; i++) plots += plotHTML(i, now);
+  for (let i = 0; i < MAX_PLOTS; i++) plots += plotHTML(i, t);
   view.innerHTML = `
     <div class="scene-scroll"><div class="scene">
       ${sceneCanvas('farm', drawFarm)}
@@ -184,10 +269,10 @@ function seedTotal() {
 }
 
 function updatePlots() {
-  const now = Date.now();
+  const t = now();
   view.querySelectorAll('.plot[data-plot]').forEach(el => {
     const i = Number(el.dataset.plot);
-    const html = plotHTML(i, now);
+    const html = plotHTML(i, t);
     const sig = html.match(/data-sig="([^"]+)"/)[1];
     if (el.dataset.sig === sig) return;
     const tpl = document.createElement('template');
@@ -199,7 +284,7 @@ function updatePlots() {
 }
 
 function plotTooltip(i) {
-  const s = plotState(i, Date.now());
+  const s = plotState(i, now());
   if (s.kind === 'locked') return `<b>Locked plot</b><div class="line">Unlocks at valley level ${G.levelUnlockingPlot(i)}</div>`;
   if (s.kind === 'empty') return `<b>Empty plot</b><div class="line">Click to plant a seed</div>`;
   const crop = CROP[s.plot.cropId];
@@ -212,67 +297,40 @@ function plotTooltip(i) {
 const gemsFor = (crop) => HARVEST_GEMS[crop.rarity]?.[crop.tier] || 0;
 
 function clickPlot(i, el) {
-  const s = plotState(i, Date.now());
+  const s = plotState(i, now());
   if (s.kind === 'locked') return toast(`This plot unlocks at level ${G.levelUnlockingPlot(i)}.`);
   if (s.kind === 'empty') return openSeedPicker(i);
   if (s.kind === 'ready') return doHarvest(i, el);
   openCropPanel(i);
 }
 
-function doHarvest(i, el) {
-  const res = act(() => G.harvest(state, i, Date.now()));
-  if (!res) return;
+async function doHarvest(i, el) {
   const rect = el.getBoundingClientRect();
+  const res = await dispatch({ type: 'harvest', plot: i });
+  if (!res) return;
   floatText(`+${fmt(res.coins)} coins`, rect.left + rect.width / 2, rect.top);
   if (res.gems) floatText(`+${res.gems} gems${res.firstTime ? ' (first!)' : ''}`, rect.left + rect.width / 2, rect.top + 20);
   updatePlots();
 }
 
-function harvestAll() {
-  const now = Date.now();
-  let coins = 0, gems = 0, n = 0;
-  act(() => {
-    state.plots.forEach((p, i) => {
-      if (p && G.plotProgress(p, now).ready) {
-        const r = G.harvest(state, i, now);
-        coins += r.coins; gems += r.gems; n++;
-      }
-    });
-  });
-  if (!n) return toast('Nothing is ready yet.');
-  toast(`Harvested ${plural(n, 'crop')}: +${fmt(G.round2(coins))} coins${gems ? `, +${gems} gems` : ''}`);
+async function harvestAll() {
+  const res = await dispatch({ type: 'harvestAll' });
+  if (!res) return;
+  if (!res.n) return toast('Nothing is ready yet.');
+  toast(`Harvested ${plural(res.n, 'crop')}: +${fmt(res.coins)} coins${res.gems ? `, +${res.gems} gems` : ''}`);
   updatePlots();
-}
-
-function firstEmptyPlot() {
-  const open = G.plotCount(state.level);
-  for (let i = 0; i < open; i++) if (!state.plots[i]) return i;
-  return -1;
 }
 
 // Seeds sorted best-first: Premium before Feeble, Legendary before Common.
 function seedList() {
-  return Object.entries(state.seeds)
-    .map(([id, n]) => ({ crop: CROP[id], n }))
-    .sort((a, b) => TIERS.indexOf(b.crop.tier) - TIERS.indexOf(a.crop.tier) ||
-      RARITIES.indexOf(b.crop.rarity) - RARITIES.indexOf(a.crop.rarity));
+  return seedsBestFirst(state).map(id => ({ crop: CROP[id], n: state.seeds[id] }));
 }
 
-function plantAll() {
-  const now = Date.now();
-  let n = 0;
-  act(() => {
-    for (const { crop } of seedList()) {
-      while (state.seeds[crop.id]) {
-        const i = firstEmptyPlot();
-        if (i < 0) return;
-        G.plant(state, i, crop.id, now, SPEED);
-        n++;
-      }
-    }
-  });
-  if (!n) toast(firstEmptyPlot() < 0 ? 'Every open plot is planted.' : 'You have no seeds. Buy a pack at the Market.');
-  else { toast(`Planted ${plural(n, 'seed')}.`); closeModal(); }
+async function plantAll() {
+  const res = await dispatch({ type: 'plantAll' });
+  if (!res) return;
+  if (!res.n) toast(firstEmptyPlot(state) < 0 ? 'Every open plot is planted.' : 'You have no seeds. Buy a pack at the Market.');
+  else { toast(`Planted ${plural(res.n, 'seed')}.`); closeModal(); }
   if (tab === 'farm') updatePlots(); else setTab('farm');
 }
 
@@ -309,14 +367,14 @@ function renderCropPanel() {
   const box = $('#crop-panel');
   if (!box || livePlot === null) return;
   const i = livePlot;
-  const s = plotState(i, Date.now());
+  const s = plotState(i, now());
   if (s.kind !== 'growing') {
     closeModal();
     updatePlots();
     return;
   }
   const crop = CROP[s.plot.cropId];
-  const cost = G.finishNowCost(s.plot, Date.now());
+  const cost = G.finishNowCost(s.plot, now());
   const gems = gemsFor(crop);
   const filled = s.prog.stage + 1;
   const effects = s.plot.effects || [];
@@ -402,11 +460,8 @@ function fakeRoll(tier) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-function revealPack(tier, buyFirst) {
-  const res = act(() => {
-    if (buyFirst) G.buyPack(state, tier);
-    return G.openPack(state, tier);
-  });
+async function revealPack(tier, buyFirst) {
+  const res = await dispatch({ type: buyFirst ? 'buyOpen' : 'openPack', tier });
   if (!res) return;
   const winner = CROP[res.cropId];
   // The reel is built bottom-up: cell 0 shows first and the strip slides down until the
@@ -486,7 +541,7 @@ function renderHouse() {
   const lv = state.level;
   const cost = G.nextLevelCost(lv);
   const chest = G.chestFor(lv);
-  const canChest = G.canClaimChest(state, Date.now());
+  const canChest = G.canClaimChest(state, now());
   let total = 0;
   const rows = LEVEL_COSTS.map((c, idx) => {
     const L = idx + 1;
@@ -545,8 +600,8 @@ function renderHouse() {
     </div>`;
 }
 
-function openChest() {
-  const res = act(() => G.claimChest(state, Date.now()));
+async function openChest() {
+  const res = await dispatch({ type: 'claimChest' });
   if (!res) return;
   let prize;
   if (res.drop === 'produce') prize = `${spriteImg(`crop:${res.cropId}`, 32)} 1 ${CROP[res.cropId].name} (produce)`;
@@ -641,7 +696,7 @@ function floatText(text, x, y) {
 
 // --- Routing and events ------------------------------------------------------
 
-const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, house: renderHouse, backpack: renderBackpack };
+const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, house: renderHouse, backpack: renderBackpack, leaders: renderLeaders };
 
 function setTab(name) {
   tab = name;
@@ -655,13 +710,117 @@ function refresh() {
   if (tab === 'farm') updatePlots(); else RENDER[tab]();
 }
 
-function plantFirst(cropId) {
-  const i = firstEmptyPlot();
-  if (i < 0) return toast('Every open plot is planted.', true);
-  if (act(() => G.plant(state, i, cropId, Date.now(), SPEED))) {
+async function plantFirst(cropId) {
+  if (await dispatch({ type: 'plantFirst', cropId })) {
     toast(`Planted ${CROP[cropId].name}.`);
     closeModal();
     refresh();
+  }
+}
+
+// --- Profile: name, account, sign in/out ---------------------------------------
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function openProfile(mode = 'main') {
+  const nameForm = `
+    <form class="form" data-form="rename">
+      <label>Farm name<input name="name" maxlength="18" value="${esc(state.name)}" autocomplete="off"></label>
+      <button class="btn cream" type="submit">Save name</button>
+    </form>`;
+  let account;
+  if (!ONLINE) {
+    account = `<p class="muted">This site saves your farm in this browser only. Accounts and the leaderboard need the Hopi Farms server.</p>`;
+  } else if (mode === 'login') {
+    account = `
+      <form class="form" data-form="login">
+        <h4>Sign in</h4>
+        <label>Username<input name="username" autocomplete="username" required></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+        <p class="muted">Signing in switches to that account's farm. ${user?.guest ? 'Save this guest farm first if you want to keep it.' : ''}</p>
+        <div class="actions left"><button class="btn orange" type="submit">Sign in</button><button class="btn cream" type="button" data-action="profile">Back</button></div>
+      </form>`;
+  } else if (user?.guest) {
+    account = `
+      <form class="form" data-form="register">
+        <h4>Save your farm</h4>
+        <p class="muted">You're playing as a guest. Pick a username and password to keep this farm and play it on other devices.</p>
+        <label>Username<input name="username" autocomplete="username" pattern="[A-Za-z0-9_]{3,20}" title="3–20 letters, numbers or underscores" required></label>
+        <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <div class="actions left"><button class="btn orange" type="submit">Save farm</button><button class="btn cream" type="button" data-action="profile-login">I have an account</button></div>
+      </form>`;
+  } else {
+    account = `
+      <h4>Account</h4>
+      <p>Signed in as <b>${esc(user?.username || '')}</b>.</p>
+      <div class="actions left"><button class="btn cream" data-action="logout">Sign out</button></div>`;
+  }
+  openModal(`<h3>Your farm</h3>${nameForm}<hr class="rule">${account}`);
+}
+
+async function submitForm(form) {
+  const data = Object.fromEntries(new FormData(form));
+  const kind = form.dataset.form;
+  const button = form.querySelector('[type="submit"]');
+  button.disabled = true;
+  try {
+    if (kind === 'rename') {
+      if (await dispatch({ type: 'rename', name: data.name })) { toast('Name saved.'); closeModal(); }
+    } else if (kind === 'register') {
+      adopt(await api('POST', '/register', data));
+      toast(`Farm saved as ${user.username}.`);
+      closeModal();
+    } else if (kind === 'login') {
+      const res = await api('POST', '/login', data);
+      storeToken(res.token);
+      adopt(res);
+      toast(`Welcome back, ${user.username}!`);
+      closeModal();
+      setTab(tab);
+    }
+  } catch (e) {
+    if (e instanceof ApiError) toast(e.message, true);
+    else throw e;
+  } finally {
+    button.disabled = false;
+    renderHeader();
+  }
+}
+
+async function logout() {
+  if (!confirm('Sign out? You can sign back in with your username and password.')) return;
+  await api('POST', '/logout').catch(() => {});
+  storeToken(null);
+  closeModal();
+  await boot();
+}
+
+// --- Leaderboard ---------------------------------------------------------------
+
+async function renderLeaders() {
+  view.innerHTML = `<h2 class="section-title">Leaderboard</h2><div class="cards"><div class="card wide" id="leaders"><p class="muted">Loading…</p></div></div>`;
+  const box = $('#leaders');
+  if (!ONLINE) {
+    box.innerHTML = `<h4>Top farmers</h4><p class="muted">The leaderboard needs the Hopi Farms server. On this site your farm is saved in this browser only.</p>`;
+    return;
+  }
+  try {
+    const data = await api('GET', '/leaderboard');
+    if (tab !== 'leaders') return;
+    const youInTop = data.top.some(r => r.you);
+    box.innerHTML = `
+      <h4>Top farmers by XP</h4>
+      <div class="muted">${plural(data.players, 'farm')} in the valley</div>
+      <table class="odds leaders">
+        <thead><tr><th class="num">#</th><th>Farm</th><th class="num">Level</th><th class="num">XP</th></tr></thead>
+        <tbody>
+          ${data.top.map(r => `<tr class="${r.you ? 'you' : ''}"><td class="num">${r.rank}</td><td>${esc(r.name)}${r.you ? ' (you)' : ''}</td><td class="num">${r.level}</td><td class="num">${fmt(r.xp)}</td></tr>`).join('')}
+          ${data.you && !youInTop ? `<tr class="you gap"><td class="num">${data.you.rank}</td><td>${esc(data.you.name)} (you)</td><td class="num">${data.you.level}</td><td class="num">${fmt(data.you.xp)}</td></tr>` : ''}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+    box.innerHTML = `<h4>Top farmers</h4><p class="muted">${esc(e.message)}</p>`;
   }
 }
 
@@ -688,46 +847,44 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'close': return closeModal();
     case 'goto': closeModal(); return setTab(el.dataset.tab);
-    case 'rename': {
-      const name = prompt('Name your farm', state.name);
-      if (name && name.trim()) { state.name = name.trim().slice(0, 18); save(); renderHeader(); }
-      return;
-    }
+    case 'rename':
+    case 'profile': return openProfile();
+    case 'profile-login': return openProfile('login');
+    case 'logout': return logout();
     case 'plant':
-      if (act(() => G.plant(state, Number(plot), crop, Date.now(), SPEED))) { closeModal(); refresh(); }
-      return;
+      return dispatch({ type: 'plant', plot: Number(plot), cropId: crop }).then(r => { if (r) { closeModal(); refresh(); } });
     case 'plant-first': return plantFirst(crop);
     case 'plant-all': return plantAll();
     case 'harvest-all': return harvestAll();
     case 'finish':
-      if (act(() => G.finishNow(state, Number(plot), Date.now()))) { toast('Crop finished!'); closeModal(); refresh(); }
-      return;
+      return dispatch({ type: 'finishNow', plot: Number(plot) }).then(r => { if (r) { toast('Crop finished!'); closeModal(); refresh(); } });
     case 'elixir':
-      if (act(() => {
-        G.useElixir(state, Number(plot), Date.now());
-        const p = state.plots[Number(plot)];
-        p.effects = [...(p.effects || []), 'elixir'];
-      }) !== null) { toast(`Growth Elixir used: −${ELIXIR_HOURS}h.`); renderCropPanel(); refresh(); }
-      return;
-    case 'buy-open': revealPack(tier, true); return refresh();
-    case 'open': revealPack(tier, false); return refresh();
+      return dispatch({ type: 'useElixir', plot: Number(plot) }).then(r => {
+        if (r) { toast(`Growth Elixir used: −${ELIXIR_HOURS}h.`); renderCropPanel(); refresh(); }
+      });
+    case 'buy-open': return revealPack(tier, true).then(refresh);
+    case 'open': return revealPack(tier, false).then(refresh);
     case 'skip-spin': return finishSpin();
-    case 'level-up': {
-      const r = act(() => G.levelUp(state));
-      if (r) { toast(`Valley level ${r.level}! +${r.gems} gems`); refresh(); }
-      return;
-    }
+    case 'level-up':
+      return dispatch({ type: 'levelUp' }).then(r => { if (r) { toast(`Valley level ${r.level}! +${r.gems} gems`); refresh(); } });
     case 'chest': return openChest();
     case 'reset':
       if (confirm('Reset your farm? This deletes all progress.')) {
-        state = G.newGame(state.name);
-        save();
-        setTab('valley');
-        renderHeader();
-        showIntro();
+        dispatch({ type: 'reset' }).then(r => {
+          if (!r) return;
+          setTab('valley');
+          showIntro();
+        });
       }
       return;
   }
+});
+
+document.addEventListener('submit', (e) => {
+  const form = e.target.closest('form[data-form]');
+  if (!form) return;
+  e.preventDefault();
+  submitForm(form);
 });
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
@@ -764,7 +921,7 @@ function tick() {
   if (livePlot !== null) renderCropPanel();
   const timer = $('#chest-timer');
   if (timer) {
-    if (G.canClaimChest(state, Date.now())) renderHouse();
+    if (G.canClaimChest(state, now())) renderHouse();
     else timer.textContent = fmtTime(msToMidnight());
   }
   renderHeader();
@@ -772,8 +929,7 @@ function tick() {
 
 function showIntro() {
   if (state.seenIntro) return;
-  state.seenIntro = true;
-  save();
+  dispatch({ type: 'seenIntro' });
   openModal(`
     <h3>Welcome to ${GAME_NAME}!</h3>
     <div class="reveal">
@@ -795,13 +951,34 @@ $('#ico-coin').innerHTML = spriteImg('coin', 24);
 $('#ico-gem').innerHTML = spriteImg('gem', 24);
 $('#ico-xp').innerHTML = spriteImg('xp', 24);
 document.querySelectorAll('.tabs [data-icon]').forEach(b => { b.insertAdjacentHTML('afterbegin', spriteImg(b.dataset.icon, 28)); });
-if (SPEED > 1) {
+if (SPEED > 1 && !ONLINE) {
   const dev = $('#dev');
   dev.hidden = false;
   dev.textContent = `Dev speed ×${SPEED}`;
 }
 document.title = GAME_NAME;
-renderHeader();
-setTab('valley');
-showIntro();
+
+async function boot() {
+  if (ONLINE) {
+    view.innerHTML = `<p class="hint">Connecting to the valley…</p>`;
+    try {
+      await connect();
+    } catch (e) {
+      if (!(e instanceof ApiError)) throw e;
+      view.innerHTML = `
+        <div class="cards"><div class="card wide">
+          <h4>Can't reach the farm</h4>
+          <p class="muted">${esc(e.message)}</p>
+          <div class="actions left"><button class="btn orange" data-action="retry">Try again</button></div>
+        </div></div>`;
+      return;
+    }
+  }
+  renderHeader();
+  setTab('valley');
+  showIntro();
+}
+
+document.addEventListener('click', (e) => { if (e.target.closest('[data-action="retry"]')) boot(); });
+boot();
 setInterval(tick, 1000);
