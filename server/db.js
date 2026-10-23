@@ -50,6 +50,22 @@ export function openDb(file) {
       PRIMARY KEY (day, key)
     );
 
+    -- $CROP sent to the treasury, one row per Solana transaction (the signature is unique,
+    -- so a transfer can never be credited twice). status: credited | unmatched | ignored.
+    CREATE TABLE IF NOT EXISTS deposits (
+      signature  TEXT PRIMARY KEY,
+      slot       INTEGER NOT NULL,
+      time       INTEGER NOT NULL,
+      wallet     TEXT,
+      raw        TEXT NOT NULL,
+      amount     REAL NOT NULL,
+      coins      REAL NOT NULL DEFAULT 0,
+      user_id    INTEGER,
+      status     TEXT NOT NULL,
+      noted_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS deposits_user ON deposits (user_id);
+
     -- Every change made from the admin dashboard.
     CREATE TABLE IF NOT EXISTS admin_log (
       id         INTEGER PRIMARY KEY,
@@ -62,6 +78,11 @@ export function openDb(file) {
   // Added after launch: the admin flag on accounts.
   const cols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
   if (!cols.includes('is_admin')) db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+  // Added for $CROP deposits: the Solana wallet a player linked (one wallet, one account).
+  if (!cols.includes('wallet')) {
+    db.exec('ALTER TABLE users ADD COLUMN wallet TEXT');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_wallet ON users (wallet) WHERE wallet IS NOT NULL');
+  }
 
   const q = {
     insertUser: db.prepare('INSERT INTO users (created_at) VALUES (?)'),
@@ -96,6 +117,18 @@ export function openDb(file) {
       FROM farms f JOIN users u ON u.id = f.user_id`),
     farmRow: db.prepare(`SELECT f.user_id, f.state, f.updated_at, u.username, u.created_at, u.is_admin
       FROM farms f JOIN users u ON u.id = f.user_id WHERE f.user_id = ?`),
+    setWallet: db.prepare('UPDATE users SET wallet = ? WHERE id = ?'),
+    userByWallet: db.prepare('SELECT id, username FROM users WHERE wallet = ?'),
+    walletOf: db.prepare('SELECT wallet FROM users WHERE id = ?'),
+    hasDeposit: db.prepare('SELECT 1 FROM deposits WHERE signature = ?'),
+    addDeposit: db.prepare(`INSERT INTO deposits (signature, slot, time, wallet, raw, amount, coins, user_id, status, noted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    depositsOf: db.prepare('SELECT signature, time, amount, coins, status FROM deposits WHERE user_id = ? ORDER BY time DESC LIMIT 20'),
+    recentDeposits: db.prepare(`SELECT d.*, u.username FROM deposits d LEFT JOIN users u ON u.id = d.user_id
+      WHERE d.status != 'ignored' ORDER BY d.time DESC LIMIT ?`),
+    depositTotals: db.prepare(`SELECT status, COUNT(*) AS n, SUM(amount) AS amount, SUM(coins) AS coins FROM deposits GROUP BY status`),
+    depositBySig: db.prepare('SELECT * FROM deposits WHERE signature = ?'),
+    assignDeposit: db.prepare(`UPDATE deposits SET user_id = ?, coins = ?, status = 'credited' WHERE signature = ? AND status = 'unmatched'`),
     addLog: db.prepare('INSERT INTO admin_log (at, admin, action, details) VALUES (?, ?, ?, ?)'),
     recentLog: db.prepare('SELECT at, admin, action, details FROM admin_log ORDER BY id DESC LIMIT ?'),
   };
@@ -147,6 +180,21 @@ export function openDb(file) {
     isAdmin: (userId) => Boolean(q.isAdmin.get(userId)?.is_admin),
     allFarms: () => q.allFarms.all(),
     farmRow: (userId) => q.farmRow.get(userId),
+    setWallet: (userId, wallet) => q.setWallet.run(wallet, userId),
+    userByWallet: (wallet) => q.userByWallet.get(wallet),
+    walletOf: (userId) => q.walletOf.get(userId)?.wallet || null,
+    hasDeposit: (sig) => Boolean(q.hasDeposit.get(sig)),
+    addDeposit: (d) => q.addDeposit.run(d.signature, d.slot, d.time, d.wallet, d.raw, d.amount, d.coins, d.userId, d.status, d.notedAt),
+    depositsOf: (userId) => q.depositsOf.all(userId),
+    recentDeposits: (limit) => q.recentDeposits.all(limit),
+    depositTotals: () => q.depositTotals.all(),
+    depositBySig: (sig) => q.depositBySig.get(sig),
+    assignDeposit: (sig, userId, coins) => q.assignDeposit.run(userId, coins, sig).changes,
+    // Run fn inside one SQLite transaction (all or nothing).
+    tx(fn) {
+      db.exec('BEGIN IMMEDIATE');
+      try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; }
+    },
     addLog: (admin, action, details, now) => q.addLog.run(now, admin, action, JSON.stringify(details)),
     recentLog: (limit) => q.recentLog.all(limit).map(r => ({ ...r, details: JSON.parse(r.details) })),
     close: () => db.close(),

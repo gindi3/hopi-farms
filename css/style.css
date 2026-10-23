@@ -641,3 +641,16 @@ hr.rule { border: 0; border-top: 2px solid #dcc69a; margin: 16px 0; }
 
 /* Welcome screen farmer. */
 .intro-logo { margin: 4px auto 2px; animation: bob 2.4s steps(2) infinite; }
+
+/* $CROP deposit card. */
+.copy-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+code.addr {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  background: #fffaf0;
+  border: 2px solid var(--outline);
+  padding: 4px 6px;
+  word-break: break-all;
+  user-select: all;
+}
+code.addr.small { font-size: 11px; padding: 1px 4px; border-width: 1px; }

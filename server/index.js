@@ -19,6 +19,7 @@ import * as G from '../js/game.js';
 import { applyAction } from '../js/actions.js';
 import { openDb } from './db.js';
 import { adminRoutes, actionStats, dayOf } from './admin.js';
+import { createDeposits, depositConfig } from './deposits.js';
 import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY } from '../js/economy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,6 +64,7 @@ export function createServer({
   allowedOrigins = [],
   trustProxy = false,
   rateLimits = true,      // tests turn this off
+  deposits: depositOpts = {},   // { config, rpc, pollMs } for tests; defaults read the env
   log = console,
 } = {}) {
   const store = openDb(dbFile);
@@ -192,10 +194,21 @@ export function createServer({
     },
   };
   const PUBLIC = new Set(['POST /api/guest', 'POST /api/login', 'POST /api/logout', 'GET /api/leaderboard', 'GET /api/economy']);
-  const admin = adminRoutes({
-    store, ok, bad, loadFarm,
-    onEconomyChange: () => { econ = economyVersion(snapshotEconomy()); },
+  const deposits = createDeposits({
+    store, ok, bad, loadFarm, log,
+    config: depositOpts.config || depositConfig(),
+    rpc: depositOpts.rpc,
+    pollMs: depositOpts.pollMs,
   });
+  Object.assign(routes, deposits.routes);
+  const admin = {
+    ...adminRoutes({
+      store, ok, bad, loadFarm,
+      onEconomyChange: () => { econ = economyVersion(snapshotEconomy()); },
+    }),
+    ...deposits.adminRoutes,
+  };
+  if (depositOpts.autoStart !== false) deposits.start();
 
   // --- HTTP plumbing ---------------------------------------------------------
 
@@ -221,7 +234,7 @@ export function createServer({
         if (isAdminRoute && !store.isAdmin(userId)) return send(res, bad('This account is not an admin.', 403));
         const body = req.method === 'POST' ? await readJson(req) : null;
         if (body === INVALID) return send(res, bad('Bad request body.'));
-        const out = handler(req, { userId, body, url });
+        const out = await handler(req, { userId, body, url });
         if (out.status === 200 && out.json) Object.assign(out.json, { build, econ });
         return send(res, out);
       }
@@ -260,7 +273,8 @@ export function createServer({
   const pruneTimer = setInterval(pruneEmptyGuests, 3600e3);
   pruneTimer.unref();
 
-  server.on('close', () => { clearInterval(pruneTimer); store.close(); });
+  server.on('close', () => { clearInterval(pruneTimer); deposits.stop(); store.close(); });
+  server.deposits = deposits;   // for tests
   server.store = store;   // for tests and the admin CLI-style setup in tests
   return server;
 }

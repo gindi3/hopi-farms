@@ -649,6 +649,7 @@ function renderHouse() {
           ? `<button class="btn orange" data-action="chest">Open chest</button>`
           : `<button class="btn cream" disabled>Next chest in <span id="chest-timer">${fmtTime(msToMidnight())}</span></button>`}</div>
       </div>
+      ${ONLINE ? `<div class="card" id="crop-card"><h4>$CROP deposits</h4><p class="muted">Loading…</p></div>` : ''}
       <div class="card">
         <h4>Farm stats</h4>
         <table class="odds">
@@ -668,6 +669,68 @@ function renderHouse() {
         </div>
       </div>
     </div>`;
+  renderCropCard();
+}
+
+// --- $CROP deposits (one way: $CROP in, coins out; nothing is ever withdrawn) ---------
+
+const shortAddr = (a) => (a ? `${a.slice(0, 4)}…${a.slice(-4)}` : '');
+
+function solanaWallet() {
+  return window.phantom?.solana || window.solflare || window.solana || null;
+}
+
+async function renderCropCard() {
+  const box = $('#crop-card');
+  if (!box) return;
+  let w;
+  try { w = await api('GET', '/wallet'); } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+    box.innerHTML = `<h4>$CROP deposits</h4><p class="muted">${esc(e.message)}</p>`;
+    return;
+  }
+  if (!$('#crop-card')) return;
+  const rate = `1 $CROP = ${fmt(w.coinsPerCrop)} coin${w.coinsPerCrop === 1 ? '' : 's'}`;
+  let bodyHtml;
+  if (!w.enabled) {
+    bodyHtml = `<p class="muted">Deposits open soon. You'll be able to send $CROP from your Solana wallet to get coins.</p>`;
+  } else if (!w.canLink) {
+    bodyHtml = `<p class="muted">Save your farm with a username first, then link your Solana wallet to deposit $CROP.</p>
+      <div class="actions"><button class="btn orange" data-action="profile">Save my farm</button></div>`;
+  } else if (!w.wallet) {
+    bodyHtml = `<p class="muted">Link your Solana wallet (Phantom or Solflare) to deposit $CROP. Linking only asks you to sign a message: it's free and sends nothing.</p>
+      <div class="actions"><button class="btn orange" data-action="link-wallet">Link wallet</button></div>`;
+  } else {
+    const list = w.deposits.length
+      ? `<table class="odds"><tbody>${w.deposits.map(d => `<tr><td>${new Date(d.time).toLocaleDateString()}</td><td class="num">${fmt(d.amount)} $CROP</td><td class="num">+${fmt(d.coins)} coins</td></tr>`).join('')}</tbody></table>`
+      : '<p class="muted">No deposits yet.</p>';
+    bodyHtml = `
+      <div class="muted">Linked wallet: <b>${esc(shortAddr(w.wallet))}</b> · ${rate}</div>
+      <p class="muted" style="margin:0">Send $CROP <b>from your linked wallet</b> to the game wallet below. Coins arrive about a minute after Solana confirms the transfer. Deposits are one way: $CROP can't be withdrawn.</p>
+      <div class="copy-row"><code class="addr">${esc(w.treasury)}</code><button class="btn cream small" data-action="copy" data-copy="${esc(w.treasury)}">Copy</button></div>
+      <div class="muted">Token: <code class="addr small">${esc(w.mint)}</code></div>
+      ${list}
+      <div class="actions"><button class="btn cream small" data-action="link-wallet">Change wallet</button></div>`;
+  }
+  box.innerHTML = `<div class="row">${spriteImg('coin', 40)}<div><h4>$CROP deposits</h4><div class="muted">${rate}</div></div></div>${bodyHtml}`;
+}
+
+async function linkWallet() {
+  const provider = solanaWallet();
+  if (!provider) return toast('No Solana wallet found. Install Phantom or Solflare, then reload.', true);
+  try {
+    const res = await provider.connect();
+    const address = (res?.publicKey || provider.publicKey).toString();
+    const { message } = await api('POST', '/wallet/challenge', { wallet: address });
+    const signed = await provider.signMessage(new TextEncoder().encode(message), 'utf8');
+    const bytes = signed?.signature || signed;
+    const signature = btoa(String.fromCharCode(...bytes));
+    await api('POST', '/wallet/link', { signature });
+    toast(`Wallet ${shortAddr(address)} linked.`);
+    renderCropCard();
+  } catch (e) {
+    toast(e instanceof ApiError ? e.message : 'Wallet linking was cancelled.', true);
+  }
 }
 
 async function openChest() {
@@ -938,6 +1001,10 @@ document.addEventListener('click', (e) => {
     case 'level-up':
       return dispatch({ type: 'levelUp' }).then(r => { if (r) { toast(`Valley level ${r.level}! +${r.gems} gems`); refresh(); } });
     case 'chest': return openChest();
+    case 'link-wallet': return linkWallet();
+    case 'copy':
+      navigator.clipboard?.writeText(el.dataset.copy).then(() => toast('Address copied.'), () => toast('Copy failed: select the address instead.', true));
+      return;
   }
 });
 
@@ -995,7 +1062,21 @@ function hideTooltip() {
   tooltip.hidden = true;
 }
 
+// In online mode, re-read the farm every 30s so deposits and admin changes show up.
+let lastSync = Date.now();
+function syncFarm() {
+  if (!ONLINE || document.hidden || spin || Date.now() - lastSync < 30e3) return;
+  lastSync = Date.now();
+  api('GET', '/me').then((data) => {
+    const before = state.coins;
+    adopt(data);
+    if (state.coins > before + 0.001) toast(`+${fmt(G.round2(state.coins - before))} coins arrived.`);
+    refresh();
+  }).catch(() => {});
+}
+
 function tick() {
+  syncFarm();
   if (tab === 'farm') {
     updatePlots();
     if (hoverPlot !== null) tooltip.innerHTML = plotTooltip(hoverPlot);
@@ -1015,7 +1096,7 @@ function showIntro() {
   openModal(`
     <h3>Welcome to ${GAME_NAME}!</h3>
     <div class="reveal">
-      <img class="px intro-logo" src="brand/logo.svg" width="136" height="168" alt="The Hopi Farms farmer" draggable="false">
+      <img class="px intro-logo" src="brand/logo-transparent.svg" width="136" height="168" alt="The Hopi Farms farmer" draggable="false">
       <p>Here are ${fmt(state.coins)} coins and a few Feeble seeds to get started.</p>
       <p class="muted">Plant seeds, wait for them to grow, and harvest them for coins. Spin seed packs at the Market. Rarer crops pay more and some pay gems. Level up your valley in the House for more plots and better returns.</p>
       <div class="actions"><button class="btn orange" data-action="plant-all">Plant my seeds</button></div>

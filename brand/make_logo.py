@@ -349,9 +349,27 @@ def farmer_icon():
             cv.set(X, Y, c)
     return cv
 
+BG = '#78ba52'   # even background green
+
+
+def on_background(fig, margin):
+    """Center a drawing on a solid square background with the same margin on every side."""
+    xs = [x for x, _ in fig.px]; ys = [y for _, y in fig.px]
+    w, h = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+    size = max(w, h) + margin * 2
+    cv = Canvas(size, size)
+    cv.rect(0, 0, size, size, BG)
+    ox, oy = (size - w) // 2 - min(xs), (size - h) // 2 - min(ys)
+    for (x, y), c in fig.px.items():
+        cv.set(x + ox, y + oy, c)
+    return cv
+
+
 if __name__ == '__main__':
-    lg = farmer_logo()
+    fig = farmer_logo()
+    lg = on_background(fig, 5)
     (OUT / 'logo.svg').write_text(lg.svg(12, 'Hopi Farms'))
+    (OUT / 'logo-transparent.svg').write_text(fig.svg(12, 'Hopi Farms'))
     (OUT / 'icon.svg').write_text(farmer_icon().svg(16, 'Hopi Farms'))
     # The earlier sign logo, kept as an alternate.
     (OUT / 'logo-sign.svg').write_text(logo().svg(8, 'Hopi Farms'))

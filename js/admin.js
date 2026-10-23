@@ -540,6 +540,76 @@ async function renderPlayerDetail(id) {
   });
 }
 
+// --- $CROP deposits ------------------------------------------------------------------------
+
+async function renderDeposits() {
+  const d = await api('GET', '/admin/deposits');
+  const t = (k) => d.totals[k] || { n: 0, amount: 0, coins: 0 };
+  const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-6)}` : '—');
+  const solscan = (sig) => `https://solscan.io/tx/${encodeURIComponent(sig)}`;
+  const statusPill = { credited: '<span class="pill good">credited</span>', unmatched: '<span class="pill warn">needs a player</span>' };
+  view.innerHTML = `
+    <div class="section-head"><div><h2>$CROP deposits</h2><div class="muted">One way only: $CROP sent to the treasury becomes coins. Nothing is ever withdrawn, and the server holds no wallet keys.</div></div>
+      <button class="btn" data-dep="scan" ${d.enabled ? '' : 'disabled'}>Check the chain now</button></div>
+    ${d.enabled ? '' : `<div class="card" style="margin-bottom:14px"><h3>Deposits are off</h3>
+      <p>Set these on the server, then restart the game:</p>
+      <pre class="mono note">HOPI_CROP_MINT=&lt;the $CROP token mint&gt;
+HOPI_TREASURY=&lt;the wallet that receives deposits&gt;
+HOPI_SOLANA_RPC=&lt;optional: your RPC URL, e.g. Helius&gt;</pre></div>`}
+    <div class="grid tiles">
+      <div class="card tile"><div class="label">$CROP received</div><div class="value">${fmt(t('credited').amount + t('unmatched').amount)}</div><div class="sub">${fmt(t('credited').n + t('unmatched').n, 0)} transfers</div></div>
+      <div class="card tile"><div class="label">Coins credited</div><div class="value">${fmt(t('credited').coins)}</div><div class="sub">from ${fmt(t('credited').n, 0)} deposits</div></div>
+      <div class="card tile"><div class="label">Waiting for a player</div><div class="value ${t('unmatched').n ? 'warn' : ''}">${fmt(t('unmatched').n, 0)}</div><div class="sub">${fmt(t('unmatched').amount)} $CROP from unlinked wallets</div></div>
+      <div class="card tile"><div class="label">Watcher</div><div class="value" style="font-size:18px">${d.enabled ? (d.status.lastError ? '<span class="bad">Error</span>' : '<span class="good">Running</span>') : 'Off'}</div><div class="sub">${d.status.lastScan ? `last checked ${ago(d.status.lastScan)}` : 'not checked yet'}${d.status.lastError ? ` · ${esc(d.status.lastError)}` : ''}</div></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><h3>Exchange rate</h3>
+        <form class="row" id="dep-rate">
+          <label class="lab" for="rate">Coins per 1 $CROP</label>
+          <input id="rate" name="coinsPerCrop" type="number" step="any" min="0" value="${d.coinsPerCrop}" style="width:140px">
+          <button class="btn primary" type="submit">Save</button>
+        </form>
+        <p class="note" style="margin-top:10px">Applies to deposits found after you save. Packs cost ${TIERS.map(tt => `${TIER[tt].label} ${fmt(TIER[tt].cost)}`).join(', ')} coins, so at this rate a Pico pack is ${fmt(TIER.pico.cost / d.coinsPerCrop)} $CROP.</p>
+      </div>
+      <div class="card"><h3>Addresses</h3>
+        <dl class="kv">
+          <dt>Token mint</dt><dd class="mono">${d.mint ? esc(d.mint) : '<span class="muted">not set</span>'}</dd>
+          <dt>Treasury</dt><dd class="mono">${d.treasury ? esc(d.treasury) : '<span class="muted">not set</span>'}</dd>
+          <dt>RPC</dt><dd class="mono">${esc(d.rpc)}</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="card" style="padding:0;margin-top:14px"><div class="table-wrap"><table>
+      <thead><tr><th>When</th><th>From wallet</th><th class="num">$CROP</th><th class="num">Coins</th><th>Player</th><th>Status</th><th>Transaction</th></tr></thead>
+      <tbody>${d.recent.map(r => `<tr>
+        <td>${new Date(r.time || r.noted_at).toLocaleString()}</td>
+        <td class="mono" title="${esc(r.wallet || '')}">${esc(short(r.wallet))}</td>
+        <td class="num">${fmt(r.amount)}</td><td class="num">${fmt(r.coins)}</td>
+        <td>${r.username ? esc(r.username) : r.status === 'unmatched'
+          ? `<form class="row" data-assign="${esc(r.signature)}" style="flex-wrap:nowrap"><input name="username" placeholder="username" style="width:120px" required><button class="btn" type="submit">Credit</button></form>`
+          : '—'}</td>
+        <td>${statusPill[r.status] || esc(r.status)}</td>
+        <td><a class="mono" href="${solscan(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">No deposits yet.</td></tr>'}</tbody>
+    </table></div></div>`;
+  $('#dep-rate').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const rate = Number(new FormData(e.target).get('coinsPerCrop'));
+    if (!confirm(`Set the rate to ${rate} coins per $CROP? It applies to every deposit found from now on.`)) return;
+    try { await api('POST', '/admin/deposits/rate', { coinsPerCrop: rate }); toast('Rate saved.'); run(renderDeposits); }
+    catch (err) { if (err instanceof ApiError) toast(err.message, true); else throw err; }
+  });
+  view.querySelectorAll('form[data-assign]').forEach(f => f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = new FormData(f).get('username').trim();
+    if (!confirm(`Credit this deposit to ${username}? This can't be undone from the dashboard.`)) return;
+    try {
+      const r = await api('POST', '/admin/deposits/assign', { signature: f.dataset.assign, username });
+      toast(`Credited ${fmt(r.coins)} coins to ${username}.`);
+      run(renderDeposits);
+    } catch (err) { if (err instanceof ApiError) toast(err.message, true); else throw err; }
+  }));
+}
+
 // --- Leaderboard & log ---------------------------------------------------------------------
 
 async function renderLeaders() {
@@ -565,7 +635,7 @@ async function renderLog() {
 
 // --- Routing ---------------------------------------------------------------------------------
 
-const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, leaders: renderLeaders, log: renderLog };
+const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, deposits: renderDeposits, leaders: renderLeaders, log: renderLog };
 
 async function run(fn) {
   try { await fn(); } catch (e) { showError(e); }
@@ -584,6 +654,13 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('#tabs button');
   if (t) return setTab(t.dataset.tab);
   if (e.target.closest('[data-refresh]')) return run(RENDER[tab]);
+  if (e.target.closest('[data-dep="scan"]')) {
+    return run(async () => {
+      const r = await api('POST', '/admin/deposits/scan');
+      toast(r.found ? `Found ${r.found} new deposit${r.found === 1 ? '' : 's'}.` : 'No new deposits.');
+      await renderDeposits();
+    });
+  }
   const pa = e.target.closest('[data-pricing]');
   if (pa) return run(() => pricingAction(pa.dataset.pricing));
   const pg = e.target.closest('[data-page]');
