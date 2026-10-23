@@ -2,7 +2,7 @@
 
 import { RARITIES, RARITY, TIERS, TIER, MAX_LEVEL, CHESTS } from './data.js';
 import { validateEconomy, baseRtpOf } from './economy.js';
-import { DOCS_PAGES, DOCS_GROUPS, DOCS_LIMITS, validateDocs } from './docs-content.js';
+import { DOCS_PAGES, DOCS_PAGE, DOCS_GROUPS, DOCS_LIMITS, DOCS_TOKENS, validateDocs, pageText } from './docs-content.js';
 
 const TOKEN_KEY = 'hopi-farms-token';
 const $ = (s, r = document) => r.querySelector(s);
@@ -811,7 +811,12 @@ async function eventAction(kind, id) {
 
 let docsSaved = null, docsDraft = null, docsPage = 'introduction';
 const docsDirty = () => docsSaved && docsDraft && JSON.stringify(docsSaved) !== JSON.stringify(docsDraft);
-const MD_HELP = 'Markdown: ## Heading, **bold**, *italic*, - list, 1. list, > tip box, [link](https://…), ![picture](https://…). A blank line starts a new paragraph.';
+const MD_HELP = 'Formatting: ## Heading, **bold**, *italic*, - list, 1. list, > tip box, >! warning box, ?? FAQ question (answer on the next line), [link](https://…), ![picture](https://…). A blank line starts a new paragraph.';
+const TOKEN_HELP = () => `<details class="note"><summary>Live numbers you can use</summary>
+  <p>These fill in from Pricing, so they're always current. Put table ones on a line of their own.</p>
+  <p><b>In a sentence:</b> ${Object.entries(DOCS_TOKENS.inline).map(([k, v]) => `<code>{{${k}}}</code> ${esc(v)}`).join(' · ')}</p>
+  <p><b>Tables:</b> ${Object.entries(DOCS_TOKENS.block).map(([k, v]) => `<code>{{${k}}}</code> ${esc(v)}`).join(' · ')}</p>
+</details>`;
 
 async function renderDocs() {
   if (!docsDraft) {
@@ -819,8 +824,8 @@ async function renderDocs() {
     docsSaved = r.docs; docsDraft = clone(r.docs);
   }
   const d = docsDraft;
-  const page = DOCS_PAGES.find(p => p.id === docsPage) || DOCS_PAGES[0];
-  const e = d.pages[page.id] || {};
+  const page = pageText(DOCS_PAGE[docsPage] ? docsPage : 'introduction', d);
+  const edited = (id) => Boolean(d.pages[id] && Object.keys(d.pages[id]).length);
   const field = (label, html, hint = '') => `<div class="field"><label>${label}</label>${html}${hint ? `<div class="note">${hint}</div>` : ''}</div>`;
   const text = (path, value, ph = '', max = DOCS_LIMITS.field) => `<input type="text" data-doc="${path}" value="${esc(value ?? '')}" placeholder="${esc(ph)}" maxlength="${max}">`;
   const area = (path, value, rows = 6, ph = '') => `<textarea data-doc="${path}" rows="${rows}" maxlength="${DOCS_LIMITS.text}" placeholder="${esc(ph)}">${esc(value ?? '')}</textarea>`;
@@ -843,12 +848,13 @@ async function renderDocs() {
         ${field('Note under the prizes', `<textarea data-doc="prizeNote" rows="2" maxlength="${DOCS_LIMITS.lead}">${esc(d.prizeNote)}</textarea>`)}
       </div>
       <div class="card"><h3>Edit a page</h3>
-        ${field('Page', `<select data-docs-page>${DOCS_GROUPS.map(g => `<optgroup label="${g}">${DOCS_PAGES.filter(p => p.group === g).map(p => `<option value="${p.id}" ${p.id === page.id ? 'selected' : ''}>${esc(p.title)}${d.pages[p.id] && Object.values(d.pages[p.id]).some(Boolean) ? ' (edited)' : ''}</option>`).join('')}</optgroup>`).join('')}</select>`)}
-        ${field('Title', text(`pages.${page.id}.title`, e.title, page.title, DOCS_LIMITS.title), 'Leave blank to keep the built-in title.')}
-        ${field('Intro line', `<textarea data-doc="pages.${page.id}.lead" rows="2" maxlength="${DOCS_LIMITS.lead}" placeholder="Leave blank to keep the built-in intro.">${esc(e.lead ?? '')}</textarea>`)}
-        ${page.id === 'introduction' ? '' : `<label class="check"><input type="checkbox" data-doc="pages.${page.id}.hidden" ${e.hidden ? 'checked' : ''}> Hide this page</label>`}
-        ${field('Extra text at the bottom of the page', area(`pages.${page.id}.extra`, e.extra, 8), MD_HELP)}
-        <div class="row"><a class="btn" href="/docs#${page.id}" target="_blank" rel="noopener">View page</a></div>
+        ${field('Page', `<select data-docs-page>${DOCS_GROUPS.map(g => `<optgroup label="${g}">${DOCS_PAGES.filter(p => p.group === g).map(p => `<option value="${p.id}" ${p.id === page.id ? 'selected' : ''}>${esc(pageText(p.id, d).title)}${edited(p.id) ? ' (edited)' : ''}</option>`).join('')}</optgroup>`).join('')}</select>`)}
+        ${field('Title', text(`pages.${page.id}.title`, page.title, '', DOCS_LIMITS.title))}
+        ${field('Intro line (shown big under the title)', `<textarea data-doc="pages.${page.id}.lead" rows="2" maxlength="${DOCS_LIMITS.lead}">${esc(page.lead)}</textarea>`)}
+        ${page.id === 'introduction' ? '' : `<label class="check"><input type="checkbox" data-doc="pages.${page.id}.hidden" ${page.hidden ? 'checked' : ''}> Hide this page</label>`}
+        ${field('Page text', area(`pages.${page.id}.body`, page.body, 22), MD_HELP)}
+        ${TOKEN_HELP()}
+        <div class="row"><a class="btn" href="/docs#${page.id}" target="_blank" rel="noopener">View live page</a>${edited(page.id) ? `<button class="btn danger" data-docs="reset-page" data-id="${page.id}">Reset this page to the original</button>` : ''}</div>
       </div>
       <div class="card wide"><h3>Your own pages</h3>
         ${d.custom.map((c, i) => `<div class="custom-page">
@@ -857,6 +863,7 @@ async function renderDocs() {
             ${field('Section', `<select data-doc="custom.${i}.group">${DOCS_GROUPS.map(g => `<option ${g === c.group ? 'selected' : ''}>${g}</option>`).join('')}</select>`)}
           </div>
           ${field('Text', area(`custom.${i}.body`, c.body, 10), MD_HELP)}
+          ${TOKEN_HELP()}
           <div class="row"><a class="btn" href="/docs#${c.id}" target="_blank" rel="noopener">View page</a><button class="btn danger small" data-docs="del-page" data-i="${i}">Delete page</button></div>
         </div>`).join('') || '<p class="muted">No extra pages yet.</p>'}
         <div class="row"><button class="btn" data-docs="add-page">Add page</button></div>
@@ -869,17 +876,23 @@ function setDoc(path, value) {
   let o = docsDraft;
   for (const k of keys.slice(0, -1)) o = o[k] ??= {};
   const last = keys[keys.length - 1];
-  if (value === '' || value === false) {
-    delete o[last];
-    // Drop page edits that are now empty, so the draft matches what's saved.
-    if (keys[0] === 'pages' && !Object.keys(o).length) delete docsDraft.pages[keys[1]];
-  } else o[last] = value;
+  if (keys[0] !== 'pages') { o[last] = value; return; }
+  // Page edits keep only what differs from the original text, so "(edited)" and Reset mean something.
+  if (last === 'body') delete o.extra;     // older saves added text separately; the body now holds it all
+  const original = DOCS_PAGE[keys[1]]?.[last];
+  if (value === original || (last === 'hidden' && !value) || (last === 'title' && !value.trim())) delete o[last];
+  else o[last] = value;
+  if (!Object.keys(o).length) delete docsDraft.pages[keys[1]];
 }
 
 async function docsAction(kind, el) {
   const d = docsDraft;
   if (kind === 'add-prize') d.prizes.push({ name: '', detail: '', value: '', image: '' });
   else if (kind === 'del-prize') d.prizes.splice(Number(el.dataset.i), 1);
+  else if (kind === 'reset-page') {
+    if (!confirm('Put this page back to its original text? Your edits to it are dropped when you save.')) return;
+    delete d.pages[el.dataset.id];
+  }
   else if (kind === 'add-page') {
     const title = prompt('Title for the new page:', '');
     if (!title?.trim()) return;

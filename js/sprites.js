@@ -408,6 +408,7 @@ const UI = {
   cream:  { rings: [EDGE, '#fffaea', '#f4e3c1', '#f4e3c1', '#f4e3c1'], fill: '#f4e3c1', shade: '#cdb07c' },
   gem:    { rings: [EDGE, '#d2f8ff', '#72d4e6', '#72d4e6', '#72d4e6'], fill: '#72d4e6', shade: '#2e8eac' },
   pill:   { rings: [EDGE, '#b8c6f5', '#6676b8', '#4a5694', '#3a447a'], fill: '#f4e3c1' },
+  gold:   { rings: [EDGE, '#fff0a0', '#f2c94c', '#d8a830', '#b88a1c'], fill: '#fff4cc' },
   sign:   { rings: [EDGE, '#f5cf98', '#cc9058', '#cc9058', '#8a5530'], fill: '#cc9058' },
 };
 

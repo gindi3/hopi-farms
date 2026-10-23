@@ -811,3 +811,8 @@ a.tx-link { color: #3a4a9a; }
 .good-note { color: #3e7a2a; margin: 0; }
 .sub-title { grid-column: 1 / -1; margin: 8px 0 0; font-family: var(--font-pixel); color: var(--cream-text); text-shadow: var(--text-outline); }
 .ev-intro .row { align-items: flex-start; }
+
+/* Gold Leaderboard button in the top bar */
+.hud .lb-btn { border-image-source: var(--ui-gold); color: #6e4e0a; font-weight: 700; }
+.hud .lb-btn:hover { filter: brightness(1.06); }
+.section-title.gold { color: #f2c94c; }

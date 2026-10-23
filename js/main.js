@@ -1373,7 +1373,7 @@ function tickEvents() {
 // --- Leaderboard ---------------------------------------------------------------
 
 async function renderLeaders() {
-  view.innerHTML = `<h2 class="section-title">Leaderboard</h2><div class="cards"><div class="card wide" id="leaders"><p class="muted">Loading…</p></div></div>`;
+  view.innerHTML = `<h2 class="section-title gold">Leaderboard</h2><div class="cards"><div class="card wide" id="leaders"><p class="muted">Loading…</p></div></div>`;
   const box = $('#leaders');
   if (!ONLINE) {
     box.innerHTML = `<h4>Top farmers</h4><p class="muted">The leaderboard needs the Hopi Farms server. On this site your farm is saved in this browser only.</p>`;
@@ -1629,7 +1629,7 @@ function showIntro() {
 // --- Boot --------------------------------------------------------------------
 
 const root = document.documentElement.style;
-for (const kind of ['panel', 'slot', 'wood', 'blue', 'orange', 'cream', 'gem', 'pill', 'sign']) {
+for (const kind of ['panel', 'slot', 'wood', 'blue', 'orange', 'cream', 'gem', 'pill', 'gold', 'sign']) {
   root.setProperty(`--ui-${kind}`, `url(${uiSlice(kind)})`);
 }
 $('#avatar').innerHTML = spriteImg('farmer', 40);
