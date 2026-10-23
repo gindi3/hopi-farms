@@ -12,7 +12,9 @@ import {
 
 const SAVE_KEY = 'hopi-farms-save';
 const params = new URLSearchParams(location.search);
-const SPEED = Math.max(1, Number(params.get('speed')) || 1);
+// ?speed=N shortens grow times for testing; it only works on a local dev server.
+const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const SPEED = IS_LOCAL ? Math.max(1, Number(params.get('speed')) || 1) : 1;
 const STAGE_NAMES = ['Seeded', 'Sprouting', 'Growing', 'Flowering', 'Ready'];
 
 const $ = (sel, root = document) => root.querySelector(sel);
