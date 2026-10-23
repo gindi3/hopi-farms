@@ -56,6 +56,24 @@ class Canvas:
     def get(self, x, y):
         return self.px.get((x, y))
 
+    def png(self, scale):
+        """PNG bytes, each cell drawn as a scale×scale block (no dependencies)."""
+        import struct, zlib
+        W, H = self.w * scale, self.h * scale
+        rows = bytearray()
+        for y in range(H):
+            rows.append(0)                       # filter: none
+            for x in range(W):
+                c = self.px.get((x // scale, y // scale))
+                if c is None:
+                    rows += b'\x00\x00\x00\x00'
+                else:
+                    rows += bytes(int(c[i:i + 2], 16) for i in (1, 3, 5)) + b'\xff'
+        def chunk(kind, data):
+            return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+        return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', W, H, 8, 6, 0, 0, 0))
+                + chunk(b'IDAT', zlib.compress(bytes(rows), 9)) + chunk(b'IEND', b''))
+
     def svg(self, scale, title):
         rows = []
         for y in range(self.h):
@@ -370,6 +388,8 @@ if __name__ == '__main__':
     lg = on_background(fig, 5)
     (OUT / 'logo.svg').write_text(lg.svg(12, 'Hopi Farms'))
     (OUT / 'logo-transparent.svg').write_text(fig.svg(12, 'Hopi Farms'))
+    (OUT / 'logo.png').write_bytes(lg.png(20))                 # 1000×1000
+    (OUT / 'logo-transparent.png').write_bytes(fig.png(20))
     (OUT / 'icon.svg').write_text(farmer_icon().svg(16, 'Hopi Farms'))
     # The earlier sign logo, kept as an alternate.
     (OUT / 'logo-sign.svg').write_text(logo().svg(8, 'Hopi Farms'))

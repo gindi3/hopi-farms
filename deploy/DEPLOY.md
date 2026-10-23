@@ -57,3 +57,20 @@ ls /etc/cloudflared/config.yml.bak-* # tunnel config backups made by setup.sh
 To restore a database backup: `sudo systemctl stop hopi-farms`, copy the backup over
 `/var/lib/hopi-farms/hopi.db` (keep it owned by `hopi`), delete the `hopi.db-wal` and
 `hopi.db-shm` files next to it, then `sudo systemctl start hopi-farms`.
+
+## $CROP deposits
+
+Deposits are one way ($CROP in, coins out) and read-only on the chain: the server holds no
+wallet keys. They're switched on by a systemd drop-in on the droplet:
+
+```
+/etc/systemd/system/hopi-farms.service.d/crop.conf
+[Service]
+Environment=HOPI_CROP_MINT=G9H9pyPib9bSzRcuqz7zFo8XcdWLzG2tx1jyjJxspump
+Environment=HOPI_TREASURY=4gy5rU2uY9mCk4VnfJbGCwV6C9PZ9eUrKMdA6sCouf75
+# Environment=HOPI_SOLANA_RPC=https://mainnet.helius-rpc.com/?api-key=...   (optional)
+```
+
+After editing: `sudo systemctl daemon-reload && sudo systemctl restart hopi-farms`.
+The treasury is the dev wallet; its pre-launch dev buy is recorded as an ignored deposit so it
+never shows as one. Set the coins-per-$CROP rate on the dashboard's Deposits tab.
