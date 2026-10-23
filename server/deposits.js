@@ -170,5 +170,5 @@ export function createDeposits({ store, ok, bad, loadFarm, log, config, rpc: rpc
     },
   };
 
-  return { routes, adminRoutes, start, stop, scan, record, publicInfo };
+  return { routes, adminRoutes, start, stop, scan, record, publicInfo, rpc };
 }

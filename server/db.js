@@ -66,6 +66,24 @@ export function openDb(file) {
     );
     CREATE INDEX IF NOT EXISTS deposits_user ON deposits (user_id);
 
+    -- Players asking the dev to send $CROP back. The amount leaves the in-game balance when
+    -- requested and is refunded if the request is cancelled or declined.
+    -- status: pending | sent | declined | cancelled
+    CREATE TABLE IF NOT EXISTS withdrawals (
+      id           INTEGER PRIMARY KEY,
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      wallet       TEXT NOT NULL,
+      amount       REAL NOT NULL,
+      status       TEXT NOT NULL,
+      day          TEXT NOT NULL,
+      requested_at INTEGER NOT NULL,
+      decided_at   INTEGER,
+      admin        TEXT,
+      signature    TEXT UNIQUE,
+      note         TEXT
+    );
+    CREATE INDEX IF NOT EXISTS withdrawals_user ON withdrawals (user_id, requested_at);
+
     -- Every change made from the admin dashboard.
     CREATE TABLE IF NOT EXISTS admin_log (
       id         INTEGER PRIMARY KEY,
@@ -129,6 +147,16 @@ export function openDb(file) {
     depositTotals: db.prepare(`SELECT status, COUNT(*) AS n, SUM(amount) AS amount, SUM(coins) AS coins FROM deposits GROUP BY status`),
     depositBySig: db.prepare('SELECT * FROM deposits WHERE signature = ?'),
     assignDeposit: db.prepare(`UPDATE deposits SET user_id = ?, coins = ?, status = 'credited' WHERE signature = ? AND status = 'unmatched'`),
+    addWithdrawal: db.prepare(`INSERT INTO withdrawals (user_id, wallet, amount, status, day, requested_at)
+      VALUES (?, ?, ?, 'pending', ?, ?)`),
+    withdrawalsOf: db.prepare('SELECT id, wallet, amount, status, requested_at, decided_at, signature, note FROM withdrawals WHERE user_id = ? ORDER BY id DESC LIMIT 50'),
+    requestedOnDay: db.prepare(`SELECT COUNT(*) AS n FROM withdrawals WHERE user_id = ? AND day = ? AND status != 'cancelled'`),
+    withdrawalById: db.prepare('SELECT * FROM withdrawals WHERE id = ?'),
+    decideWithdrawal: db.prepare(`UPDATE withdrawals SET status = ?, decided_at = ?, admin = ?, signature = ?, note = ?
+      WHERE id = ? AND status = 'pending'`),
+    allWithdrawals: db.prepare(`SELECT w.*, u.username FROM withdrawals w JOIN users u ON u.id = w.user_id
+      ORDER BY (w.status = 'pending') DESC, w.id DESC LIMIT ?`),
+    withdrawalTotals: db.prepare('SELECT status, COUNT(*) AS n, SUM(amount) AS amount FROM withdrawals GROUP BY status'),
     addLog: db.prepare('INSERT INTO admin_log (at, admin, action, details) VALUES (?, ?, ?, ?)'),
     recentLog: db.prepare('SELECT at, admin, action, details FROM admin_log ORDER BY id DESC LIMIT ?'),
   };
@@ -197,6 +225,13 @@ export function openDb(file) {
       db.exec('BEGIN IMMEDIATE');
       try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; }
     },
+    addWithdrawal: (userId, wallet, amount, day, now) => Number(q.addWithdrawal.run(userId, wallet, amount, day, now).lastInsertRowid),
+    withdrawalsOf: (userId) => q.withdrawalsOf.all(userId),
+    requestedOnDay: (userId, day) => q.requestedOnDay.get(userId, day).n,
+    withdrawalById: (id) => q.withdrawalById.get(id),
+    decideWithdrawal: (id, status, now, admin, signature, note) => q.decideWithdrawal.run(status, now, admin, signature, note, id).changes,
+    allWithdrawals: (limit) => q.allWithdrawals.all(limit),
+    withdrawalTotals: () => q.withdrawalTotals.all(),
     addLog: (admin, action, details, now) => q.addLog.run(now, admin, action, JSON.stringify(details)),
     recentLog: (limit) => q.recentLog.all(limit).map(r => ({ ...r, details: JSON.parse(r.details) })),
     close: () => db.close(),

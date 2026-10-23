@@ -772,3 +772,11 @@ b.down { color: #b8402e; }
 }
 .farm-tab.active { border-image-source: var(--ui-blue); color: #fff; text-shadow: var(--text-outline); }
 .farm-tab .ready-dot { position: absolute; top: -8px; right: -8px; width: 9px; height: 9px; background: #6cc04a; border: 2px solid var(--outline); }
+
+/* Withdrawals. */
+.withdraw-form input[name="amount"] { width: 180px; }
+.wd-status { font-family: var(--font-pixel); font-size: 13px; padding: 1px 6px; border: 2px solid var(--outline); }
+.wd-status.pending { background: #fbe7a8; }
+.wd-status.sent { background: var(--c-uncommon); }
+.wd-status.declined, .wd-status.cancelled { background: #e8dcc8; }
+a.tx-link { color: #3a4a9a; }

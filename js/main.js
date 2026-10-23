@@ -737,7 +737,7 @@ function renderHistory() {
           <tr class="total"><td><b>Net</b></td><td class="num">${signed(net)}</td></tr>
         </table>
         <div class="muted">${packSpend ? `Packs have returned ${pct((harvested + pending) / packSpend)} of what you spent, counting seeds not yet harvested at today's values.` : 'Open a pack to start your history.'}
-          Also spent ${fmt(levelSpend)} on valley levels${deposited ? ` and deposited ${fmt(deposited)} from your wallet` : ''}.</div>
+          Also spent ${fmt(levelSpend)} on valley levels${st.farmSpend ? ` and ${fmt(st.farmSpend)} on farms` : ''}${deposited ? `, deposited ${fmt(deposited)}` : ''}${st.cropWithdrawn ? `, withdrew ${fmt(st.cropWithdrawn)}` : ''}${st.withdrawHeld ? ` (${fmt(st.withdrawHeld)} waiting to be sent)` : ''}.</div>
       </div>
       <div class="card">
         <h4>Spent by pack</h4>
@@ -761,6 +761,60 @@ function renderHistory() {
         ${st.packsOpened > pulledTotal ? `<div class="muted">${fmt(st.packsOpened - pulledTotal, 0)} earlier pack${st.packsOpened - pulledTotal === 1 ? '' : 's'} opened before seed tracking started are counted in the totals only.</div>` : ''}
       </div>
     </div>`;
+}
+
+// --- Withdraw: ask the dev to send $CROP back ---------------------------------------
+
+const WITHDRAW_STATUS = {
+  pending: ['Waiting for the dev', 'pending'],
+  sent: ['Sent', 'sent'],
+  declined: ['Declined, refunded', 'declined'],
+  cancelled: ['Cancelled, refunded', 'cancelled'],
+};
+
+async function renderWithdraw() {
+  view.innerHTML = `<h2 class="section-title">Withdraw $CROP</h2><div class="cards"><div class="card wide" id="withdraw"><p class="muted">Loading…</p></div></div>`;
+  const box = $('#withdraw');
+  if (!ONLINE) { box.innerHTML = '<p class="muted">Withdrawals need the Hopi Farms server.</p>'; return; }
+  let w;
+  try { w = await api('GET', '/withdrawals'); } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+    box.innerHTML = `<p class="muted">${esc(e.message)}</p>`;
+    return;
+  }
+  if (tab !== 'withdraw') return;
+  let top;
+  if (!w.enabled) top = '<p class="muted">Withdrawals aren\'t open yet.</p>';
+  else if (!w.account) top = `<p class="muted">Save your farm with a username first, then link your Solana wallet.</p><div class="actions left"><button class="btn orange" data-action="profile">Save my farm</button></div>`;
+  else if (!w.wallet) top = `<p class="muted">$CROP is only ever sent to the wallet linked to your farm. Link yours first: it's free and sends nothing.</p><div class="actions left"><button class="btn orange" data-action="link-wallet">Link wallet</button></div>`;
+  else if (w.usedToday) {
+    const at = new Date(w.nextAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    top = `<p>You've made today's request. You can make another after midnight UTC (${at} your time).</p>`;
+  } else {
+    top = `
+      <form class="form withdraw-form" data-form="withdraw">
+        <label>Amount ($CROP)
+          <div class="row"><input name="amount" type="number" min="${w.min}" max="${state.coins}" step="any" required placeholder="e.g. 100">
+          <button class="btn cream small" type="button" data-action="withdraw-max">Max</button></div>
+        </label>
+        <div class="actions left"><button class="btn orange" type="submit">Request withdrawal</button></div>
+      </form>`;
+  }
+  box.innerHTML = `
+    <div class="row">${spriteImg('coin', 40)}<div><h4>Request a withdrawal</h4>
+      <div class="muted">Balance: ${fmt(state.coins)} $CROP${w.wallet ? ` · Sends to ${esc(shortAddr(w.wallet))}` : ''}</div></div></div>
+    <p class="muted" style="margin:0">The amount leaves your balance as soon as you request it. The dev sends it from the game wallet to your linked wallet by hand. If a request is declined, or you cancel it while it's pending, the $CROP comes back. One request per day.</p>
+    ${top}
+    <h4 style="margin-top:6px">Your requests</h4>
+    ${w.requests.length ? `<div class="table-wrap"><table class="odds">
+      <thead><tr><th>Requested</th><th class="num">$CROP</th><th>Status</th><th></th></tr></thead>
+      <tbody>${w.requests.map(r => `<tr>
+        <td>${new Date(r.requested_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</td>
+        <td class="num">${fmt(r.amount)}</td>
+        <td><span class="wd-status ${WITHDRAW_STATUS[r.status][1]}">${WITHDRAW_STATUS[r.status][0]}</span>${r.note && r.status === 'declined' ? ` <span class="muted">(${esc(r.note)})</span>` : ''}</td>
+        <td>${r.status === 'pending' ? `<button class="btn cream small" data-action="withdraw-cancel" data-id="${r.id}">Cancel</button>`
+          : r.signature ? `<a class="tx-link" href="https://solscan.io/tx/${encodeURIComponent(r.signature)}" target="_blank" rel="noopener noreferrer">View transaction</a>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>` : '<p class="empty-note">No requests yet.</p>'}`;
 }
 
 // --- Potions Master ---------------------------------------------------------------
@@ -945,6 +999,7 @@ async function linkWallet() {
     await api('POST', '/wallet/link', { signature });
     toast(`Wallet ${shortAddr(address)} linked.`);
     renderCropCard();
+    if (tab === 'withdraw') renderWithdraw();
   } catch (e) {
     toast(e instanceof ApiError ? e.message : 'Wallet linking was cancelled.', true);
   }
@@ -1067,7 +1122,7 @@ function floatText(text, x, y) {
 
 // --- Routing and events ------------------------------------------------------
 
-const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, potions: renderPotions, house: renderHouse, backpack: renderBackpack, history: renderHistory, leaders: renderLeaders };
+const RENDER = { valley: renderValley, farm: renderFarm, market: renderMarket, potions: renderPotions, house: renderHouse, backpack: renderBackpack, history: renderHistory, withdraw: renderWithdraw, leaders: renderLeaders };
 
 function setTab(name) {
   if (name !== tab) sfx('click');
@@ -1137,7 +1192,14 @@ async function submitForm(form) {
   const button = form.querySelector('[type="submit"]');
   button.disabled = true;
   try {
-    if (kind === 'rename') {
+    if (kind === 'withdraw') {
+      const amount = Number(data.amount);
+      if (!confirm(`Request a withdrawal of ${fmt(amount)} $CROP to your linked wallet? It leaves your balance now and the dev sends it by hand.`)) return;
+      adopt(await api('POST', '/withdrawals', { amount }));
+      sfx('coins');
+      toast(`Requested ${fmt(amount)} $CROP. You'll see it here once it's sent.`);
+      renderWithdraw();
+    } else if (kind === 'rename') {
       if (await dispatch({ type: 'rename', name: data.name })) { toast('Name saved.'); closeModal(); }
     } else if (kind === 'register') {
       adopt(await api('POST', '/register', data));
@@ -1270,6 +1332,16 @@ document.addEventListener('click', (e) => {
       return;
     }
     case 'link-wallet': return linkWallet();
+    case 'withdraw-max': {
+      const input = document.querySelector('[data-form="withdraw"] input[name="amount"]');
+      if (input) input.value = G.round2(state.coins);
+      return;
+    }
+    case 'withdraw-cancel':
+      if (!confirm('Cancel this request? The $CROP goes back to your balance.')) return;
+      return api('POST', '/withdrawals/cancel', { id: Number(el.dataset.id) })
+        .then((d) => { adopt(d); toast('Request cancelled. $CROP returned.'); renderHeader(); renderWithdraw(); })
+        .catch((e) => { if (e instanceof ApiError) toast(e.message, true); else throw e; });
     case 'deposit':
       openModal(`<div id="crop-card" class="deposit-panel"><h3>Deposit $CROP</h3><p class="muted">Loading…</p></div>`);
       return renderCropCard();

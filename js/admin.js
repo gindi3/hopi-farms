@@ -597,6 +597,63 @@ HOPI_SOLANA_RPC=&lt;optional: your RPC URL, e.g. Helius&gt;</pre></div>`}
   }));
 }
 
+// --- Withdrawal requests ---------------------------------------------------------------------
+
+async function renderWithdrawals() {
+  const d = await api('GET', '/admin/withdrawals');
+  const t = (k) => d.totals[k] || { n: 0, amount: 0 };
+  const pending = d.requests.filter(r => r.status === 'pending');
+  setWithdrawCount(pending.length);
+  const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-6)}` : '—');
+  const pill = { pending: '<span class="pill warn">pending</span>', sent: '<span class="pill good">sent</span>', declined: '<span class="pill">declined</span>', cancelled: '<span class="pill">cancelled</span>' };
+  view.innerHTML = `
+    <div class="section-head"><div><h2>Withdrawal requests</h2>
+      <div class="muted">Players ask for $CROP back to their linked wallet. Send it from the treasury${d.treasury ? ` (<span class="mono">${esc(short(d.treasury))}</span>)` : ''} in your wallet app, then paste the transaction ID to mark it sent. The server checks the payment on chain. The amount was taken from the player's balance when they asked; declining refunds it.</div></div>
+      <button class="btn" data-refresh>Refresh</button></div>
+    <div class="grid tiles">
+      <div class="card tile"><div class="label">Waiting</div><div class="value ${t('pending').n ? 'warn' : ''}">${fmt(t('pending').n, 0)}</div><div class="sub">${fmt(t('pending').amount)} $CROP to send</div></div>
+      <div class="card tile"><div class="label">Sent</div><div class="value">${fmt(t('sent').amount)}</div><div class="sub">$CROP in ${fmt(t('sent').n, 0)} withdrawals</div></div>
+      <div class="card tile"><div class="label">Declined</div><div class="value">${fmt(t('declined').n, 0)}</div><div class="sub">${fmt(t('declined').amount)} $CROP refunded</div></div>
+    </div>
+    <div class="card" style="padding:0"><div class="table-wrap"><table>
+      <thead><tr><th>Requested</th><th>Player</th><th class="num">$CROP</th><th>Send to</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${d.requests.map(r => `<tr>
+        <td>${new Date(r.requested_at).toLocaleString()}</td>
+        <td>${esc(r.username)}</td>
+        <td class="num"><b>${fmt(r.amount)}</b></td>
+        <td class="mono"><span title="${esc(r.wallet)}">${esc(short(r.wallet))}</span> <button class="btn" data-copy="${esc(r.wallet)}" style="padding:2px 8px">Copy</button></td>
+        <td>${pill[r.status] || esc(r.status)}${r.note && r.status !== 'pending' ? ` <span class="muted">${esc(r.note)}</span>` : ''}</td>
+        <td>${r.status === 'pending' ? `
+          <form class="row" data-wd-sent="${r.id}" style="flex-wrap:nowrap">
+            <input name="signature" placeholder="Transaction ID" style="width:200px" required>
+            <button class="btn primary" type="submit">Mark as sent</button>
+            <button class="btn danger" type="button" data-wd-decline="${r.id}" data-amount="${r.amount}" data-user="${esc(r.username)}">Decline</button>
+          </form>` : r.signature ? `<a class="mono" href="https://solscan.io/tx/${encodeURIComponent(r.signature)}" target="_blank" rel="noopener noreferrer">${esc(short(r.signature))}</a>${r.admin ? ` <span class="muted">by ${esc(r.admin)}</span>` : ''}` : (r.admin ? `<span class="muted">by ${esc(r.admin)}</span>` : '')}</td>
+      </tr>`).join('') || '<tr><td colspan="6" class="muted">No requests yet.</td></tr>'}</tbody>
+    </table></div></div>`;
+  view.querySelectorAll('form[data-wd-sent]').forEach(f => f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const signature = new FormData(f).get('signature').trim();
+    const btn = f.querySelector('[type=submit]');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try {
+      const r = await api('POST', '/admin/withdrawals/sent', { id: Number(f.dataset.wdSent), signature });
+      toast(`Verified on chain: ${fmt(r.received)} $CROP sent. Marked as sent.`);
+      run(renderWithdrawals);
+    } catch (err) {
+      btn.disabled = false; btn.textContent = 'Mark as sent';
+      if (err instanceof ApiError) toast(err.message, true); else throw err;
+    }
+  }));
+}
+
+function setWithdrawCount(n) {
+  const el = $('#wd-count');
+  if (!el) return;
+  el.textContent = n;
+  el.hidden = !n;
+}
+
 // --- Leaderboard & log ---------------------------------------------------------------------
 
 async function renderLeaders() {
@@ -622,7 +679,7 @@ async function renderLog() {
 
 // --- Routing ---------------------------------------------------------------------------------
 
-const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, deposits: renderDeposits, leaders: renderLeaders, log: renderLog };
+const RENDER = { overview: renderOverview, economy: renderEconomy, pricing: renderPricing, players: renderPlayers, deposits: renderDeposits, withdrawals: renderWithdrawals, leaders: renderLeaders, log: renderLog };
 
 async function run(fn) {
   try { await fn(); } catch (e) { showError(e); }
@@ -658,6 +715,21 @@ document.addEventListener('click', (e) => {
     document.querySelectorAll('[data-player]').forEach(r => r.classList.toggle('sel', r === row));
     return run(() => renderPlayerDetail(selectedPlayer));
   }
+  const copy = e.target.closest('[data-copy]');
+  if (copy) {
+    navigator.clipboard?.writeText(copy.dataset.copy).then(() => toast('Wallet address copied.'), () => toast('Copy failed.', true));
+    return;
+  }
+  const dec = e.target.closest('[data-wd-decline]');
+  if (dec) {
+    const reason = prompt(`Decline ${dec.dataset.user}'s request for ${fmt(Number(dec.dataset.amount))} $CROP? They get it back in their balance. Reason (shown to the player):`, '');
+    if (reason === null) return;
+    return run(async () => {
+      await api('POST', '/admin/withdrawals/decline', { id: Number(dec.dataset.wdDecline), reason });
+      toast('Declined and refunded.');
+      await renderWithdrawals();
+    });
+  }
   if (e.target.closest('[data-signout]')) {
     api('POST', '/logout').catch(() => {});
     try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked */ }
@@ -676,6 +748,7 @@ async function boot() {
     $('#tabs').hidden = false;
     $('#who').innerHTML = `Signed in as <b>${esc(me.username)}</b> <button class="btn" data-signout>Sign out</button>`;
     setTab(tab);
+    api('GET', '/admin/withdrawals').then(d => setWithdrawCount(d.requests.filter(r => r.status === 'pending').length)).catch(() => {});
   } catch (e) {
     showError(e);
   }

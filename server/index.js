@@ -20,6 +20,7 @@ import { applyAction } from '../js/actions.js';
 import { openDb } from './db.js';
 import { adminRoutes, actionStats, dayOf } from './admin.js';
 import { createDeposits, depositConfig } from './deposits.js';
+import { createWithdrawals } from './withdrawals.js';
 import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY, withDefaults } from '../js/economy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -202,12 +203,19 @@ export function createServer({
     pollMs: depositOpts.pollMs,
   });
   Object.assign(routes, deposits.routes);
+  const withdrawals = createWithdrawals({
+    store, ok, bad, loadFarm,
+    config: depositOpts.config || depositConfig(),
+    rpc: deposits.rpc,
+  });
+  Object.assign(routes, withdrawals.routes);
   const admin = {
     ...adminRoutes({
       store, ok, bad, loadFarm,
       onEconomyChange: () => { econ = economyVersion(snapshotEconomy()); },
     }),
     ...deposits.adminRoutes,
+    ...withdrawals.adminRoutes,
   };
   if (depositOpts.autoStart !== false) deposits.start();
 

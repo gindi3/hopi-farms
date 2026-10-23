@@ -1,6 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { generateKeyPairSync, sign, randomBytes } from 'node:crypto';
 
 import { createServer } from '../server/index.js';
 import { base58Encode, parseDeposit } from '../server/solana.js';
@@ -42,6 +42,23 @@ function transfer(from, amount, { failed = false } = {}) {
   });
   return sig;
 }
+// A treasury payout to `to` (a withdrawal sent by the dev), with a real-format signature.
+function payout(to, amount) {
+  const raw = BigInt(Math.round(amount * 1e6));
+  const sig = base58Encode(randomBytes(64));
+  chain.push({
+    signature: sig, slot: 5000 + chain.length, blockTime: 1_700_100_000 + chain.length, err: null,
+    tx: { meta: { err: null,
+      preTokenBalances: [
+        { mint: MINT, owner: TREASURY, uiTokenAmount: { amount: String(raw * 100n), decimals: 6 } },
+        { mint: MINT, owner: to, uiTokenAmount: { amount: '0', decimals: 6 } }],
+      postTokenBalances: [
+        { mint: MINT, owner: TREASURY, uiTokenAmount: { amount: String(raw * 99n), decimals: 6 } },
+        { mint: MINT, owner: to, uiTokenAmount: { amount: String(raw), decimals: 6 } }] } },
+  });
+  return sig;
+}
+
 async function rpc(method, params) {
   if (method === 'getTokenAccountsByOwner') return { value: [{ pubkey: ATA }] };
   if (method === 'getSignaturesForAddress') {
@@ -175,4 +192,78 @@ test('a scan pages back through many new transfers', async () => {
 test('parseDeposit ignores transfers that do not reach the treasury', () => {
   const tx = { meta: { err: null, preTokenBalances: [], postTokenBalances: [{ mint: MINT, owner: 'someone', uiTokenAmount: { amount: '5', decimals: 0 } }] } };
   assert.equal(parseDeposit(tx, { mint: MINT, treasury: TREASURY }), null);
+});
+
+// --- Withdrawal requests ----------------------------------------------------------------
+
+test('withdrawals need an account and a linked wallet', async () => {
+  const g = (await call('POST', '/api/guest')).data;
+  assert.match((await call('POST', '/api/withdrawals', { token: g.token, body: { amount: 5 } })).data.error, /username/);
+  const token = await player('nowallet');
+  assert.match((await call('POST', '/api/withdrawals', { token, body: { amount: 5 } })).data.error, /Link your Solana wallet/);
+});
+
+test('a request holds the amount, once per day; cancelling refunds it', async () => {
+  const token = await player('withdrawer');
+  const w = wallet();
+  await link(token, w);
+  const start = await coins(token);
+  assert.match((await call('POST', '/api/withdrawals', { token, body: { amount: start + 1 } })).data.error, /only have/);
+  const r = await call('POST', '/api/withdrawals', { token, body: { amount: 30 } });
+  assert.equal(r.status, 200);
+  assert.equal(await coins(token), start - 30);
+  assert.match((await call('POST', '/api/withdrawals', { token, body: { amount: 1 } })).data.error, /one withdrawal per day/);
+  const cancel = await call('POST', '/api/withdrawals/cancel', { token, body: { id: r.data.id } });
+  assert.equal(cancel.status, 200);
+  assert.equal(await coins(token), start);
+  // A cancelled request doesn't use up the day.
+  assert.equal((await call('POST', '/api/withdrawals', { token, body: { amount: 10 } })).status, 200);
+});
+
+test('the dev marks a request sent only with a matching on-chain payment', async () => {
+  const adminTok = await player('payer');
+  server.store.setAdmin('payer', true);
+  const token = await player('payee');
+  const w = wallet();
+  await link(token, w);
+  const start = await coins(token);
+  const { id } = (await call('POST', '/api/withdrawals', { token, body: { amount: 40 } })).data;
+
+  const tooSmall = payout(w.address, 39);
+  assert.match((await call('POST', '/api/admin/withdrawals/sent', { token: adminTok, body: { id, signature: tooSmall } })).data.error, /less than/);
+  const wrongWallet = payout(wallet().address, 40);
+  assert.match((await call('POST', '/api/admin/withdrawals/sent', { token: adminTok, body: { id, signature: wrongWallet } })).data.error, /doesn't send/);
+  assert.match((await call('POST', '/api/admin/withdrawals/sent', { token: adminTok, body: { id, signature: 'nope' } })).data.error, /signature/);
+
+  const good = payout(w.address, 40);
+  const ok = await call('POST', '/api/admin/withdrawals/sent', { token: adminTok, body: { id, signature: good } });
+  assert.equal(ok.status, 200, ok.data.error);
+  assert.equal(await coins(token), start - 40);                  // stays deducted
+  const mine = (await call('GET', '/api/withdrawals', { token })).data.requests[0];
+  assert.equal(mine.status, 'sent');
+  assert.equal(mine.signature, good);
+
+  // The same transaction can't settle a second request.
+  const token2 = await player('payee2');
+  const w2 = wallet();
+  await link(token2, w2);
+  const { id: id2 } = (await call('POST', '/api/withdrawals', { token: token2, body: { amount: 40 } })).data;
+  const reuse = await call('POST', '/api/admin/withdrawals/sent', { token: adminTok, body: { id: id2, signature: good } });
+  assert.equal(reuse.status, 400);
+});
+
+test('declining a request refunds the player', async () => {
+  const adminTok = await player('decider');
+  server.store.setAdmin('decider', true);
+  const token = await player('declined');
+  const w = wallet();
+  await link(token, w);
+  const start = await coins(token);
+  const { id } = (await call('POST', '/api/withdrawals', { token, body: { amount: 25 } })).data;
+  const r = await call('POST', '/api/admin/withdrawals/decline', { token: adminTok, body: { id, reason: 'test' } });
+  assert.equal(r.status, 200);
+  assert.equal(await coins(token), start);
+  assert.equal((await call('GET', '/api/withdrawals', { token })).data.requests[0].note, 'test');
+  // Players can't use admin routes.
+  assert.equal((await call('POST', '/api/admin/withdrawals/decline', { token, body: { id } })).status, 403);
 });

@@ -139,3 +139,18 @@ export async function scanDeposits({ rpc, mint, treasury, seen, record, limit = 
   }
   return found;
 }
+
+// How much of `mint` moved from `from` to `to` in a confirmed transaction (UI units), or
+// null if the transaction failed or doesn't move that token between them.
+export function parseTransfer(tx, { mint, from, to }) {
+  if (!tx || tx.meta?.err) return null;
+  const owned = (list, owner) => (list || [])
+    .filter(b => b.mint === mint && b.owner === owner)
+    .reduce((a, b) => a + BigInt(b.uiTokenAmount.amount), 0n);
+  const decimals = [...(tx.meta.postTokenBalances || []), ...(tx.meta.preTokenBalances || [])]
+    .find(b => b.mint === mint)?.uiTokenAmount.decimals ?? 0;
+  const sent = owned(tx.meta.preTokenBalances, from) - owned(tx.meta.postTokenBalances, from);
+  const received = owned(tx.meta.postTokenBalances, to) - owned(tx.meta.preTokenBalances, to);
+  if (sent <= 0n || received <= 0n) return null;
+  return { sent: Number(sent) / 10 ** decimals, received: Number(received) / 10 ** decimals };
+}
