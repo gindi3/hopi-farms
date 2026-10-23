@@ -20,7 +20,7 @@ import { applyAction } from '../js/actions.js';
 import { openDb } from './db.js';
 import { adminRoutes, actionStats, dayOf } from './admin.js';
 import { createDeposits, depositConfig } from './deposits.js';
-import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY } from '../js/economy.js';
+import { applyEconomy, snapshotEconomy, economyVersion, DEFAULT_ECONOMY, withDefaults } from '../js/economy.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const STATIC_DIRS = new Set(['css', 'js', 'brand']);
@@ -72,7 +72,7 @@ export function createServer({
 
   // The economy is shared module state: start from the saved one (or the defaults).
   try {
-    applyEconomy(store.getSetting('economy') || DEFAULT_ECONOMY);
+    applyEconomy(withDefaults(store.getSetting('economy')));
   } catch (e) {
     log.error('Saved economy is invalid; using defaults.', e);
     applyEconomy(DEFAULT_ECONOMY);

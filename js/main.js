@@ -3,7 +3,7 @@
 import * as G from './game.js';
 import {
   GAME_NAME, RARITIES, RARITY, TIERS, TIER, CROP, CROPS, ITEMS, HARVEST_GEMS,
-  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ECON, CHESTS, RECIPES, BREW_ODDS, itemId,
+  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ECON, CHESTS, RECIPES, BREW_ODDS, itemId, MAX_FARMS, STARTER,
 } from './data.js';
 import { applyAction, firstEmptyPlot, seedsBestFirst, MAX_BATCH } from './actions.js';
 import { applyEconomy } from './economy.js';
@@ -225,8 +225,28 @@ function renderHeader() {
   badge.hidden = !ready;
 }
 
+// Crops ready to harvest, on one farm or across all of them.
+function readyOn(plots, t) {
+  return plots.filter(p => p && G.plotProgress(p, t).ready).length;
+}
 function readyCount(t = now()) {
-  return state.plots.filter(p => p && G.plotProgress(p, t).ready).length;
+  return G.farmList(state).reduce((a, f) => a + readyOn(f.plots, t), 0);
+}
+const farmName = () => state.farms[state.activeFarm].name;
+
+// Bar above the field: numbered farms (dot = crops ready), and opening a new one.
+function farmBar(t) {
+  const farms = G.farmList(state);
+  const cost = G.nextFarmCost(state);
+  return `
+    <div class="farm-bar">
+      <div class="farm-title"><b>${esc(farmName())}</b> <span>· Level ${state.level} · ${farms.length} of ${MAX_FARMS} farms</span></div>
+      <div class="farm-tabs">
+        ${farms.map((f, i) => `<button class="farm-tab ${i === state.activeFarm ? 'active' : ''}" data-action="switch-farm" data-index="${i}"
+          title="${esc(f.name)} · Level ${f.level}${readyOn(f.plots, t) ? ` · ${readyOn(f.plots, t)} ready` : ''}">${i + 1}${readyOn(f.plots, t) && i !== state.activeFarm ? '<i class="ready-dot"></i>' : ''}</button>`).join('')}
+        ${cost === null ? '' : `<button class="btn orange small" data-action="open-farm">+ New farm · ${spriteImg('coin', 14)} ${fmt(cost)}</button>`}
+      </div>
+    </div>`;
 }
 
 // --- Scenes ------------------------------------------------------------------
@@ -298,6 +318,7 @@ function renderFarm() {
   let plots = '';
   for (let i = 0; i < MAX_PLOTS; i++) plots += plotHTML(i, t);
   view.innerHTML = `
+    ${farmBar(t)}
     <div class="scene-scroll"><div class="scene">
       ${sceneCanvas('farm', drawFarm)}
       ${plots}
@@ -693,7 +714,7 @@ function renderHistory() {
   const harvested = st.harvestCoins ?? st.coinsEarned ?? 0;
   const deposited = st.cropDeposited || 0;
   // Pending: what seeds still to be harvested (planted or in the backpack) will pay now.
-  const plantedCrops = state.plots.filter(Boolean);
+  const plantedCrops = G.farmList(state).flatMap(f => f.plots.filter(Boolean));
   const heldCount = Object.values(state.seeds).reduce((a, b) => a + b, 0);
   const pending = G.round2(plantedCrops.reduce((a, p) => a + G.cropPayout(p.cropId, state.level), 0) +
     Object.entries(state.seeds).reduce((a, [id, n]) => a + G.cropPayout(id, state.level) * n, 0));
@@ -828,7 +849,7 @@ function renderHouse() {
     <h2 class="section-title">House</h2>
     <div class="cards">
       <div class="card">
-        <div class="row">${spriteImg('farmer', 56)}<div><h4>Gardener</h4><div class="muted">Bribe the Gardener to grow your valley.</div></div></div>
+        <div class="row">${spriteImg('farmer', 56)}<div><h4>Gardener · ${esc(farmName())}</h4><div class="muted">Bribe the Gardener to grow this farm's valley.</div></div></div>
         ${cost === null ? `<p><b>Your valley is at max level (${MAX_LEVEL}).</b></p>` : `
           <table class="odds">
             <tr><th></th><th class="num">Now</th><th class="num">Next</th></tr>
@@ -841,7 +862,7 @@ function renderHouse() {
           <div class="actions"><button class="btn orange" data-action="level-up" ${state.coins < cost ? 'disabled' : ''}>Level up ${spriteImg('coin', 16)} ${fmt(cost)}</button></div>`}
       </div>
       <div class="card">
-        <div class="row">${spriteImg(`chest_${chest.id}`, 56)}<div><h4>${chest.label} Chest</h4><div class="muted">One free chest per day</div></div></div>
+        <div class="row">${spriteImg(`chest_${chest.id}`, 56)}<div><h4>${chest.label} Chest · ${esc(farmName())}</h4><div class="muted">One free chest per day</div></div></div>
         <div class="muted">Contains ${chest.gems[0]}–${chest.gems[1]} gems, plus one roll for produce, a seed pack or a potion.</div>
         <div class="actions">${canChest
           ? `<button class="btn orange" data-action="chest">Open chest</button>`
@@ -1217,6 +1238,18 @@ document.addEventListener('click', (e) => {
       });
     }
     case 'brew': return brew(el.dataset.recipe, Number(el.dataset.option));
+    case 'switch-farm':
+      return dispatch({ type: 'switchFarm', index: Number(el.dataset.index) }).then(r => { if (r) { sfx('click'); hideTooltip(); RENDER[tab](); } });
+    case 'open-farm': {
+      const cost = G.nextFarmCost(state);
+      if (!confirm(`Open Farm ${state.farms.length + 1} for ${fmt(cost)} $CROP? It comes with ${fmt(STARTER.coins)} starter $CROP and seeds, its own 30 plots, level and daily chest.`)) return;
+      return dispatch({ type: 'openFarm' }).then(r => {
+        if (!r) return;
+        sfx('levelUp');
+        toast(`Farm ${r.farms} is open! +${fmt(r.starter)} starter $CROP and seeds.`);
+        setTab('farm');
+      });
+    }
     case 'buy-open': return revealPack(tier, true).then(refresh);
     case 'open': return revealPack(tier, false).then(refresh);
     case 'skip-spin': return finishSpin();

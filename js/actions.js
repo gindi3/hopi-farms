@@ -107,6 +107,12 @@ export function applyAction(state, action, { now, rng = Math.random, speed = 1 }
       return { name };
     }
 
+    case 'openFarm':
+      return G.openFarm(state);
+
+    case 'switchFarm':
+      return G.switchFarm(state, Number(action.index));
+
     case 'seenIntro':
       state.seenIntro = true;
       return {};

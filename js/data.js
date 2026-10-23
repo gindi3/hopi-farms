@@ -82,8 +82,12 @@ export const ECON = {
   rtpCap: 1.0,
   firstHarvestGems: 2,
   levelUpGemsPerLevel: 10,
+  farmCost: 500,            // $CROP to open each farm after the first (keep above starter $CROP)
 };
 export const MAX_LEVEL = 15;
+// Farms per account. Each has its own plots, valley level and daily chest; the $CROP
+// balance, gems, XP and backpack are shared.
+export const MAX_FARMS = 30;
 
 // Cost to go from level (i) to (i + 1); 7,550 in total for all 15 levels.
 export const LEVEL_COSTS = [100, 125, 150, 175, 250, 300, 350, 400, 450, 600, 700, 800, 900, 1000, 1250];

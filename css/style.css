@@ -759,3 +759,16 @@ b.down { color: #b8402e; }
 .odds tr.pending td { color: var(--ink-soft); }
 
 .odds tr.total td { border-top: 2px solid var(--outline); border-bottom: 0; }
+
+/* Farm switcher. */
+.farm-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin: 0 8px 6px; }
+.farm-title { color: var(--cream-text); text-shadow: var(--text-outline); font-size: 20px; }
+.farm-title b { font-family: var(--font-pixel); font-weight: 500; font-size: 18px; }
+.farm-tabs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.farm-tab {
+  position: relative; min-width: 34px; min-height: 34px; padding: 0 2px;
+  border: 10px solid transparent; border-image: var(--ui-cream) 5 fill / 10px / 0 stretch; image-rendering: pixelated;
+  font-family: var(--font-pixel); font-size: 13px; color: var(--ink);
+}
+.farm-tab.active { border-image-source: var(--ui-blue); color: #fff; text-shadow: var(--text-outline); }
+.farm-tab .ready-dot { position: absolute; top: -8px; right: -8px; width: 9px; height: 9px; background: #6cc04a; border: 2px solid var(--outline); }

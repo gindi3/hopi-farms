@@ -22,12 +22,18 @@ export function snapshotEconomy() {
     firstHarvestGems: ECON.firstHarvestGems,
     levelUpGemsPerLevel: ECON.levelUpGemsPerLevel,
     starterCoins: STARTER.coins,
+    farmCost: ECON.farmCost,
     chestGems: Object.fromEntries(CHESTS.map(c => [c.id, [...c.gems]])),
   };
 }
 
 // The values the game shipped with, captured before anything is changed.
 export const DEFAULT_ECONOMY = snapshotEconomy();
+
+// Settings saved by an older version may lack newer fields: fill those from the defaults.
+export function withDefaults(cfg) {
+  return cfg && typeof cfg === 'object' ? { ...DEFAULT_ECONOMY, ...cfg } : DEFAULT_ECONOMY;
+}
 
 // Base RTP implied by the odds and payouts: the expected return of one pack at level 0.
 export function baseRtpOf(cfg) {
@@ -68,7 +74,8 @@ export function validateEconomy(cfg) {
   }
   num(cfg.firstHarvestGems, 'First-harvest gems', { min: 0, max: 1e6, int: true });
   num(cfg.levelUpGemsPerLevel, 'Level-up gems per level', { min: 0, max: 1e6, int: true });
-  num(cfg.starterCoins, 'Starter coins', { min: 0, max: 1e9 });
+  num(cfg.starterCoins, 'Starter $CROP', { min: 0, max: 1e9 });
+  num(cfg.farmCost, 'New farm price', { min: 0, max: 1e9 });
   for (const c of CHESTS) {
     const g = cfg.chestGems?.[c.id];
     if (!Array.isArray(g) || g.length !== 2) { errors.push(`${c.label} chest gems need a min and max.`); continue; }
@@ -94,6 +101,7 @@ export function applyEconomy(cfg) {
   ECON.firstHarvestGems = cfg.firstHarvestGems;
   ECON.levelUpGemsPerLevel = cfg.levelUpGemsPerLevel;
   STARTER.coins = cfg.starterCoins;
+  ECON.farmCost = cfg.farmCost;
   for (const c of CHESTS) c.gems = [...cfg.chestGems[c.id]];
 }
 

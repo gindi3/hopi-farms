@@ -351,6 +351,7 @@ async function renderPricing() {
             <div class="field"><label>Harvest bonus per level (%)</label>${inp('harvestBonusPerLevel', draft.harvestBonusPerLevel, { pctScale: true, max: 10 })}</div>
             <div class="field"><label>RTP cap (%)</label>${inp('rtpCap', draft.rtpCap, { pctScale: true, max: 200 })}</div>
             <div class="field"><label>Starter $CROP</label>${inp('starterCoins', draft.starterCoins)}</div>
+            <div class="field"><label>New farm price ($CROP, farms 2–30)</label>${inp('farmCost', draft.farmCost)}</div>
           </div>
           <p class="note" style="margin-top:10px">Base RTP isn't set directly: it's the expected payout of the odds above (sum of chance × payout).</p>
         </div>
@@ -413,6 +414,7 @@ function renderPreview() {
       <dt>Average grow time</dt><dd>${avgHours.toFixed(2)}h</dd>
       ${TIERS.map(t => `<dt>${TIER[t].label}: back per pack</dt><dd>${fmt(draft.packCost[t] * base)} of ${fmt(draft.packCost[t])}</dd>`).join('')}
     </dl>
+    ${draft.farmCost <= draft.starterCoins ? `<p class="bad" style="margin-top:12px">A new farm costs ${fmt(draft.farmCost)} but gives ${fmt(draft.starterCoins)} starter $CROP, so players can open farms for free $CROP. Set the price above the starter amount.</p>` : ''}
     <p class="muted" style="margin-top:12px">${changes ? `${changes} unsaved change${changes === 1 ? '' : 's'} (highlighted).` : 'No unsaved changes.'}</p>`;
 }
 
@@ -475,11 +477,11 @@ async function renderPlayers() {
       </form></div>
     <div class="split">
       <div class="card" style="padding:0"><div class="table-wrap"><table>
-        <thead><tr><th>Farm</th><th>Account</th><th class="num">Lv</th><th class="num">XP</th><th class="num">$CROP</th><th class="num">Gems</th><th class="num">Packs</th><th class="num">Harvests</th><th>Last active</th></tr></thead>
+        <thead><tr><th>Farm</th><th>Account</th><th class="num">Lv</th><th class="num">Farms</th><th class="num">XP</th><th class="num">$CROP</th><th class="num">Gems</th><th class="num">Packs</th><th class="num">Harvests</th><th>Last active</th></tr></thead>
         <tbody>${data.rows.map(r => `<tr class="click ${r.id === selectedPlayer ? 'sel' : ''}" data-player="${r.id}">
           <td>${esc(r.name)}</td><td>${r.username ? esc(r.username) : '<span class="muted">guest</span>'} ${r.admin ? '<span class="pill admin">admin</span>' : ''}</td>
-          <td class="num">${r.level}</td><td class="num">${fmt(r.xp, 0)}</td><td class="num">${fmt(r.coins)}</td><td class="num">${fmt(r.gems, 0)}</td>
-          <td class="num">${fmt(r.packsOpened, 0)}</td><td class="num">${fmt(r.harvests, 0)}</td><td>${ago(r.lastActive)}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">No players found.</td></tr>'}
+          <td class="num">${r.level}</td><td class="num">${r.farms}</td><td class="num">${fmt(r.xp, 0)}</td><td class="num">${fmt(r.coins)}</td><td class="num">${fmt(r.gems, 0)}</td>
+          <td class="num">${fmt(r.packsOpened, 0)}</td><td class="num">${fmt(r.harvests, 0)}</td><td>${ago(r.lastActive)}</td></tr>`).join('') || '<tr><td colspan="10" class="muted">No players found.</td></tr>'}
         </tbody></table></div>
         <div class="row" style="padding:10px 14px;justify-content:space-between">
           <span class="muted">Page ${page + 1} of ${pages}</span>
@@ -506,7 +508,7 @@ async function renderPlayerDetail(id) {
     <h2>${esc(p.name)}</h2>
     <div class="muted">${p.username ? `@${esc(p.username)}` : 'Guest'} · id ${p.id} · joined ${new Date(p.createdAt).toLocaleDateString()} · active ${ago(p.lastActive)}</div>
     <dl class="kv" style="margin:12px 0">
-      <dt>Level / XP</dt><dd>${p.level} / ${fmt(p.xp, 0)}</dd>
+      <dt>Farms / top level / XP</dt><dd>${p.farms} / ${p.level} / ${fmt(p.xp, 0)}</dd>
       <dt>Coins</dt><dd>${fmt(p.coins)}</dd>
       <dt>Gems</dt><dd>${fmt(p.gems, 0)}</dd>
       <dt>Spent / earned</dt><dd>${fmt(p.coinsSpent)} / ${fmt(p.coinsEarned)}</dd>

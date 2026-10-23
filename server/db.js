@@ -154,7 +154,9 @@ export function openDb(file) {
       return row ? row.state : null;
     },
     putFarm(userId, state, now) {
-      q.putFarm.run(userId, JSON.stringify(state), state.name, state.level, state.xp, now);
+      // Leaderboard level = the account's highest farm level.
+      const level = Math.max(state.level, ...(state.farms || []).map(f => f.level || 0));
+      q.putFarm.run(userId, JSON.stringify(state), state.name, level, state.xp, now);
     },
     leaderboard(limit) {
       return q.top.all(limit);

@@ -288,3 +288,15 @@ test('the farmer icon is served and linked from the page', async () => {
   assert.match(res.headers.get('content-type'), /svg/);
   assert.equal((await call('GET', '/brand/make_logo.py')).status, 404);
 });
+
+test('economy saved before new fields existed still loads, keeping its custom values', async () => {
+  const { withDefaults, validateEconomy, DEFAULT_ECONOMY } = await import('../js/economy.js');
+  const old = structuredClone(DEFAULT_ECONOMY);
+  delete old.farmCost;
+  old.firstHarvestGems = 7;
+  assert.ok(validateEconomy(old).length > 0);             // missing field on its own
+  const filled = withDefaults(old);
+  assert.deepEqual(validateEconomy(filled), []);
+  assert.equal(filled.firstHarvestGems, 7);
+  assert.equal(filled.farmCost, DEFAULT_ECONOMY.farmCost);
+});

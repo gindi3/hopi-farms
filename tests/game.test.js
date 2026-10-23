@@ -187,3 +187,53 @@ test('the chest day is a UTC day and resets at midnight UTC', () => {
   assert.equal(G.dayKey(lateUtc + 31 * 60e3), '2026-10-24');
   assert.equal(G.msToNextDay(lateUtc), 30 * 60e3);
 });
+
+test('multiple farms: open, switch, separate plots/levels/chests, shared balance', () => {
+  const s = G.newGame();
+  s.coins = 2000;
+  G.plant(s, 0, 'f_potato', 0);
+  G.levelUp(s);                                   // Farm 1 → level 1 (100)
+  const day = Date.UTC(2026, 9, 23, 10);
+  G.claimChest(s, day, () => 0);
+  const r = G.openFarm(s);                        // −500 +100 starter
+  assert.deepEqual(r, { index: 1, cost: 500, starter: 100, farms: 2 });
+  assert.equal(s.coins, 2000 - 100 - 500 + 100);
+  assert.equal(s.activeFarm, 1);
+  assert.equal(s.level, 0);                        // new farm starts fresh
+  assert.equal(s.plots.filter(Boolean).length, 0);
+  assert.ok(G.canClaimChest(s, day));             // its own daily chest
+  G.switchFarm(s, 0);
+  assert.equal(s.level, 1);
+  assert.equal(s.plots[0].cropId, 'f_potato');    // Farm 1's crop is still there
+  assert.equal(G.canClaimChest(s, day), false);
+  assert.equal(G.maxLevel(s), 1);
+  const list = G.farmList(s);
+  assert.equal(list.length, 2);
+  assert.equal(list[1].level, 0);
+});
+
+test('farms are capped at 30 and need enough $CROP', () => {
+  const s = G.newGame();
+  s.coins = 0;
+  assert.throws(() => G.openFarm(s), /need 500/);
+  s.coins = 1e7;
+  for (let i = 1; i < 30; i++) G.openFarm(s);
+  assert.equal(s.farms.length, 30);
+  assert.equal(G.nextFarmCost(s), null);
+  assert.throws(() => G.openFarm(s), /30 farms/);
+  assert.throws(() => G.switchFarm(s, 30), /No such farm/);
+});
+
+test('a save from before multiple farms loads as Farm 1', () => {
+  const old = G.newGame('Oldie');
+  delete old.farms; delete old.activeFarm;
+  old.level = 4;
+  old.plots[2] = { cropId: 'potato', plantedAt: 0, readyAt: 1 };
+  const back = G.deserialize(JSON.stringify(old));
+  assert.equal(back.farms.length, 1);
+  assert.equal(back.farms[0].name, 'Farm 1');
+  assert.equal(back.level, 4);
+  assert.equal(back.plots[2].cropId, 'potato');
+  const round = G.deserialize(G.serialize(back));
+  assert.deepEqual(round, back);
+});

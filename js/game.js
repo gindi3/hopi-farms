@@ -4,7 +4,7 @@
 import {
   RARITIES, RARITY, TIER, CROPS, CROP, HARVEST_GEMS, ECON,
   MAX_LEVEL, LEVEL_COSTS, BASE_PLOTS, MAX_PLOTS, PLOT_LEVELS,
-  STARTER, CHESTS, HOUR_MS, ITEMS, RECIPES, BREW_ODDS, itemId,
+  STARTER, CHESTS, HOUR_MS, ITEMS, RECIPES, BREW_ODDS, itemId, MAX_FARMS,
 } from './data.js';
 
 export const SAVE_VERSION = 1;
@@ -24,8 +24,61 @@ export function newGame(name = 'Farmer') {
     harvested: {},      // crop ids harvested at least once (for first-harvest gems)
     plots: Array.from({ length: MAX_PLOTS }, () => null),
     lastChestDay: null,
+    // Every farm on the account. The active farm's live level/plots/chest are the top-level
+    // fields above; its entry here only keeps its name until you switch away from it.
+    farms: [emptyFarm('Farm 1')],
+    activeFarm: 0,
     stats: { packsOpened: 0, harvests: 0, coinsSpent: 0, coinsEarned: 0, packSpend: 0, levelSpend: 0 },
   };
+}
+
+function emptyFarm(name) {
+  return { name, level: 0, plots: Array.from({ length: MAX_PLOTS }, () => null), lastChestDay: null };
+}
+
+// --- Farms -----------------------------------------------------------------------
+
+// All farms with live values for the active one.
+export function farmList(state) {
+  return state.farms.map((f, i) => (i === state.activeFarm
+    ? { name: f.name, level: state.level, plots: state.plots, lastChestDay: state.lastChestDay }
+    : f));
+}
+
+export function maxLevel(state) {
+  return Math.max(...farmList(state).map(f => f.level));
+}
+
+export function switchFarm(state, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= state.farms.length) throw new GameError('No such farm.');
+  if (index === state.activeFarm) return { index };
+  const cur = state.farms[state.activeFarm];
+  state.farms[state.activeFarm] = { name: cur.name, level: state.level, plots: state.plots, lastChestDay: state.lastChestDay };
+  const next = state.farms[index];
+  state.level = next.level;
+  state.plots = next.plots;
+  state.lastChestDay = next.lastChestDay;
+  state.activeFarm = index;
+  return { index };
+}
+
+export function nextFarmCost(state) {
+  return state.farms.length >= MAX_FARMS ? null : ECON.farmCost;
+}
+
+// Open another farm (up to MAX_FARMS): costs ECON.farmCost, comes with the starter $CROP and
+// seeds like a first farm, and becomes the active farm.
+export function openFarm(state) {
+  const cost = nextFarmCost(state);
+  if (cost === null) throw new GameError(`You already have ${MAX_FARMS} farms, the most allowed.`);
+  if (state.coins < cost) throw new GameError(`You need ${cost} $CROP to open a new farm.`);
+  state.coins = round2(state.coins - cost + STARTER.coins);
+  state.stats.coinsSpent = round2(state.stats.coinsSpent + cost);
+  state.stats.farmSpend = round2((state.stats.farmSpend || 0) + cost);
+  for (const [id, n] of Object.entries(STARTER.seeds)) addCount(state.seeds, id, n);
+  state.farms.push(emptyFarm(`Farm ${state.farms.length + 1}`));
+  switchFarm(state, state.farms.length - 1);
+  return { index: state.activeFarm, cost, starter: STARTER.coins, farms: state.farms.length };
 }
 
 // --- Economy -----------------------------------------------------------------
@@ -308,8 +361,17 @@ export function deserialize(json) {
   const fresh = newGame(data.name);
   const state = { ...fresh, ...data, stats: { ...fresh.stats, ...data.stats } };
   state.level = Math.min(Math.max(0, state.level | 0), MAX_LEVEL);
-  if (!Array.isArray(state.plots) || state.plots.length !== MAX_PLOTS) {
-    state.plots = Array.from({ length: MAX_PLOTS }, (_, i) => data.plots?.[i] ?? null);
+  const fitPlots = (plots) => (Array.isArray(plots) && plots.length === MAX_PLOTS
+    ? plots : Array.from({ length: MAX_PLOTS }, (_, i) => plots?.[i] ?? null));
+  state.plots = fitPlots(data.plots);
+  // Saves from before multiple farms: the one farm becomes Farm 1.
+  if (!Array.isArray(data.farms) || !data.farms.length) {
+    state.farms = [emptyFarm('Farm 1')];
+    state.activeFarm = 0;
+  } else {
+    state.farms = data.farms.map((f, i) => ({ ...emptyFarm(f.name || `Farm ${i + 1}`), ...f, plots: fitPlots(f.plots),
+      level: Math.min(Math.max(0, f.level | 0), MAX_LEVEL) }));
+    state.activeFarm = Math.min(Math.max(0, data.activeFarm | 0), state.farms.length - 1);
   }
   return state;
 }
