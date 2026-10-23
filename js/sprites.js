@@ -308,6 +308,13 @@ const ICONS = {
     p.layer(any(ell(8, 3.6, 6.4, 1.5), box(5, 1, 10, 3)), ['#e8c25a', '#b08a30', '#f7e2a0']);
     p.line(5, 3, 10, 3, '#c85a3a');
   },
+  ledger(p) {
+    const paper = p.layer(box(4, 3, 11, 13), ['#f2e2b8', '#c8a870', '#fff6dc']);
+    p.within(paper, (x, y) => x >= 5 && x <= 10 && (y === 5 || y === 7 || y === 9) && !(y === 9 && x > 8), '#8a6a3a');
+    p.within(paper, (x, y) => (x === 9 || x === 10) && y === 11, '#4e9a3a');
+    p.layer(ell(8, 2.5, 5.4, 1.2), ['#d8bc84', '#9a7a48', '#f2e2b8']);
+    p.layer(ell(8, 13.5, 5.4, 1.2), ['#d8bc84', '#9a7a48', '#f2e2b8']);
+  },
   bush(p) {
     p.layer(any(ell(8, 9, 6.6, 5), ell(5, 7, 3.5, 3), ell(11, 7, 3.5, 3)), ['#4fa040', '#2e6a2c', '#86cc72']);
   },
