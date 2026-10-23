@@ -697,6 +697,13 @@ function renderHistory() {
   const deposited = st.cropDeposited || 0;
   const packNet = G.round2(harvested - packSpend);
   const farmNet = G.round2(harvested - packSpend - levelSpend);
+  // Pending: what seeds still to be harvested will pay at the current level.
+  const plantedCrops = state.plots.filter(Boolean);
+  const plantedValue = G.round2(plantedCrops.reduce((a, p) => a + G.cropPayout(p.cropId, state.level), 0));
+  const heldCount = Object.values(state.seeds).reduce((a, b) => a + b, 0);
+  const heldValue = G.round2(Object.entries(state.seeds).reduce((a, [id, n]) => a + G.cropPayout(id, state.level) * n, 0));
+  const pending = G.round2(plantedValue + heldValue);
+  const packNetPending = G.round2(packNet + pending);
   const signed = (n) => `<b class="${n > 0 ? 'up' : n < 0 ? 'down' : ''}">${n > 0 ? '+' : ''}${fmt(n)}</b>`;
   const pulls = st.pulls || {};
   const pulledTotal = Object.values(pulls).reduce((a, b) => a + b, 0);
@@ -710,12 +717,15 @@ function renderHistory() {
           <tr><td>Spent on seed packs</td><td class="num">−${fmt(packSpend)}</td></tr>
           <tr><td>Redeemed from harvests</td><td class="num">+${fmt(harvested)}</td></tr>
           <tr><td><b>Net from packs</b></td><td class="num">${signed(packNet)}</td></tr>
+          <tr class="pending"><td>Pending: ${plural(plantedCrops.length, 'crop')} planted</td><td class="num">+${fmt(plantedValue)}</td></tr>
+          <tr class="pending"><td>Pending: ${plural(heldCount, 'seed')} in your backpack</td><td class="num">+${fmt(heldValue)}</td></tr>
+          <tr><td><b>Net from packs, with pending</b></td><td class="num">${signed(packNetPending)}</td></tr>
           <tr><td>Spent on valley levels</td><td class="num">−${fmt(levelSpend)}</td></tr>
           <tr><td><b>Net from farming</b></td><td class="num">${signed(farmNet)}</td></tr>
           <tr><td>Deposited from your wallet</td><td class="num">+${fmt(deposited)}</td></tr>
           <tr><td>Balance now</td><td class="num">${fmt(state.coins)}</td></tr>
         </table>
-        <div class="muted">${rtp === null ? 'Open a pack to start your history.' : `Your harvests have paid back ${pct(rtp)} of what you spent on packs. Crops still growing will add to this when you harvest them.`}</div>
+        <div class="muted">${rtp === null ? 'Open a pack to start your history.' : `Harvests have paid back ${pct(rtp)} of what you spent on packs, or ${pct((harvested + pending) / packSpend)} counting seeds you haven't harvested yet. Pending seeds are valued at what they pay at your current level.`}</div>
       </div>
       <div class="card">
         <h4>Activity</h4>
