@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hopi Farms</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="hud">
+      <button class="nameplate" data-action="rename" title="Rename your farm">
+        <span class="avatar" id="avatar"></span>
+        <span id="farm-name">Farmer</span>
+      </button>
+      <div class="pills">
+        <div class="pill" title="Coins"><span id="ico-coin"></span><b id="coins">0</b></div>
+        <div class="pill" title="Gems"><span id="ico-gem"></span><b id="gems">0</b></div>
+        <div class="pill" title="Valley level and RTP"><span class="lv">LV</span><b id="level">0</b><small id="rtp"></small></div>
+        <div class="pill" title="Farmer XP"><span id="ico-xp"></span><b id="xp">0</b></div>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Locations">
+      <button data-tab="valley" data-icon="bush">Valley</button>
+      <button data-tab="house" data-icon="chest_wooden">House</button>
+      <button data-tab="farm" data-icon="stage:3">Farm<span class="badge" hidden></span></button>
+      <button data-tab="market" data-icon="pack_basic">Market</button>
+      <button data-tab="backpack" data-icon="fertilizer">Backpack</button>
+    </nav>
+
+    <main id="view"></main>
+  </div>
+
+  <div id="tooltip" class="tooltip" hidden></div>
+  <div id="modal" class="modal" hidden><div class="panel" id="modal-panel"></div></div>
+  <div id="toasts" class="toasts"></div>
+  <div id="dev" class="dev" hidden></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
