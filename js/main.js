@@ -3,7 +3,7 @@
 import * as G from './game.js';
 import {
   GAME_NAME, RARITIES, RARITY, TIERS, TIER, CROP, CROPS, ITEMS, HARVEST_GEMS,
-  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ECON, CHESTS, RECIPES, BREW_ODDS, itemId, MAX_FARMS, STARTER,
+  MAX_LEVEL, MAX_PLOTS, LEVEL_COSTS, ECON, CHESTS, RECIPES, BREW_ODDS, BREW_ODDS_BY, itemId, MAX_FARMS, STARTER,
 } from './data.js';
 import { applyAction, firstEmptyPlot, seedsBestFirst, MAX_BATCH } from './actions.js';
 import { applyEconomy } from './economy.js';
@@ -830,10 +830,14 @@ function renderPotions() {
           <table class="odds">${[1, 2, 3].map(g => { const it = ITEMS[itemId(id, g)]; return `<tr><td>${itemImg(itemId(id, g), 20)}</td><td>${it.name.split(' ')[0]}</td><td>${esc(it.desc)}</td></tr>`; }).join('')}</table>
           ${r.options.map((o, k) => {
             const have = G.recipeStock(state, o);
-            const crops = CROPS.filter(c => c.tier === o.tier && c.rarity === o.rarity);
-            return `<div class="recipe">
+            const crops = G.recipeCrops(o);
+            const rarityLabel = [].concat(o.rarity).map(x => RARITY[x].label).join(' or ');
+            const tag = o.odds === 'master' ? '<span class="brew-tag master">Master brew · always Advanced</span>'
+              : o.odds === 'premium' ? '<span class="brew-tag premium">Premium brew · no fizzles</span>' : '';
+            return `<div class="recipe ${o.odds || ''}">
+              ${tag}
               <div class="row tight">${crops.map(c => `<span title="${c.name}">${spriteImg(`crop:${c.id}`, 24)}</span>`).join('')}
-                <span>${o.count} ${RARITY[o.rarity].label} ${TIER[o.tier].label} produce</span></div>
+                <span>${o.count} ${rarityLabel} ${TIER[o.tier].label} produce</span></div>
               <div class="row"><span class="muted">You have ${fmt(have, 0)}</span>
                 <button class="btn ${have >= o.count ? 'orange' : 'cream'} small" data-action="brew" data-recipe="${id}" data-option="${k}" ${have >= o.count ? '' : 'disabled'}>Brew</button></div>
             </div>`;
@@ -841,7 +845,14 @@ function renderPotions() {
         </div>`).join('')}
       <div class="card">
         <h4>Brewing odds</h4>
-        <table class="odds">${BREW_ODDS.map(o => `<tr><td>${o.grade ? o.label : 'Disaster (produce lost)'}</td><td class="num">${(o.chance * 100).toFixed(1)}%</td></tr>`).join('')}</table>
+        <table class="odds">
+          <thead><tr><th>Result</th>${Object.values(BREW_ODDS_BY).map(b => `<th class="num">${b.name}</th>`).join('')}</tr></thead>
+          <tbody>${BREW_ODDS.map(o => `<tr><td>${o.grade ? o.label : 'Disaster (produce lost)'}</td>${Object.values(BREW_ODDS_BY).map(b => {
+            const c = b.odds.find(x => x.grade === o.grade)?.chance || 0;
+            return `<td class="num">${c ? `${(c * 100).toFixed(1)}%` : '—'}</td>`;
+          }).join('')}</tr>`).join('')}</tbody>
+        </table>
+        <div class="muted">Regular brews use Pico and Basic produce. Premium produce (from Premium packs and Gold chests) brews with no fizzles, and one Epic or Legendary Premium crop makes a guaranteed Advanced potion.</div>
         <div class="muted">Apply potions from a growing crop's panel on the Farm. A crop can take one Pesticide and one Fertilizer, and any number of Elixirs.</div>
       </div>
       <div class="card wide">

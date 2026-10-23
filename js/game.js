@@ -4,7 +4,7 @@
 import {
   RARITIES, RARITY, TIER, CROPS, CROP, HARVEST_GEMS, ECON,
   MAX_LEVEL, LEVEL_COSTS, BASE_PLOTS, MAX_PLOTS, PLOT_LEVELS,
-  STARTER, CHESTS, HOUR_MS, ITEMS, RECIPES, BREW_ODDS, itemId, MAX_FARMS,
+  STARTER, CHESTS, HOUR_MS, ITEMS, RECIPES, BREW_ODDS_BY, itemId, MAX_FARMS,
 } from './data.js';
 
 export const SAVE_VERSION = 1;
@@ -254,10 +254,14 @@ export function useElixir(state, plotIndex, now) {
   return useItem(state, plotIndex, 'elixir', now);
 }
 
-// Produce that counts for a recipe option: crops of that pack tier and rarity.
+// Crops whose produce counts for a recipe option: that pack tier and rarity (or rarities).
+export function recipeCrops(option) {
+  const rarities = [].concat(option.rarity);
+  return CROPS.filter(c => c.tier === option.tier && rarities.includes(c.rarity));
+}
+
 export function recipeStock(state, option) {
-  return CROPS.filter(c => c.tier === option.tier && c.rarity === option.rarity)
-    .reduce((n, c) => n + (state.produce[c.id] || 0), 0);
+  return recipeCrops(option).reduce((n, c) => n + (state.produce[c.id] || 0), 0);
 }
 
 // Brew a potion at the Potions Master. Burns the option's produce, then rolls the grade
@@ -266,18 +270,22 @@ export function craft(state, recipeId, optionIndex, rng = Math.random) {
   const recipe = RECIPES[recipeId];
   const option = recipe?.options[optionIndex];
   if (!option) throw new GameError('Unknown recipe.');
-  if (recipeStock(state, option) < option.count) throw new GameError(`You need ${option.count} ${RARITY[option.rarity].label} ${TIER[option.tier].label} produce.`);
+  if (recipeStock(state, option) < option.count) {
+    const rar = [].concat(option.rarity).map(r => RARITY[r].label).join(' or ');
+    throw new GameError(`You need ${option.count} ${rar} ${TIER[option.tier].label} produce.`);
+  }
   let left = option.count;
-  // Use the largest stacks first.
-  for (const c of CROPS.filter(c => c.tier === option.tier && c.rarity === option.rarity)
+  // Use the largest stacks first (for a Master brew, Epic before Legendary on a tie).
+  for (const c of recipeCrops(option)
     .sort((a, b) => (state.produce[b.id] || 0) - (state.produce[a.id] || 0))) {
     const take = Math.min(left, state.produce[c.id] || 0);
     if (take) addCount(state.produce, c.id, -take);
     left -= take;
     if (!left) break;
   }
-  let r = rng(), grade = BREW_ODDS[BREW_ODDS.length - 1].grade;
-  for (const o of BREW_ODDS) { r -= o.chance; if (r < 0) { grade = o.grade; break; } }
+  const odds = BREW_ODDS_BY[option.odds || 'standard'].odds;
+  let r = rng(), grade = odds[odds.length - 1].grade;
+  for (const o of odds) { r -= o.chance; if (r < 0) { grade = o.grade; break; } }
   state.stats.brews = (state.stats.brews || 0) + 1;
   if (grade === 0) return { recipe: recipeId, grade: 0 };
   const id = itemId(recipeId, grade);

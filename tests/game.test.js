@@ -250,3 +250,20 @@ test('finish now cost follows the gems-per-hour setting', async () => {
     ECON.skipGemsPerHour = 1;
   }
 });
+
+test('premium produce brews better; a master brew is always Advanced', () => {
+  const s = G.newGame();
+  s.produce = { banana: 2, mango: 1, lavender: 1, dragon_fruit: 1 };
+  // Premium brew: a roll that would fizzle a normal brew (0.05) is Lesser here.
+  const p = G.craft(s, 'elixir', 2, () => 0.05);
+  assert.equal(p.grade, 1);
+  assert.equal((s.produce.banana || 0) + (s.produce.mango || 0), 0);   // 3 Common Premium used
+  // Master brew: any roll gives Advanced, using Epic or Legendary Premium produce.
+  const m1 = G.craft(s, 'fertilizer', 3, () => 0);
+  assert.equal(m1.item, 'fertilizer3');
+  const m2 = G.craft(s, 'pesticide', 3, () => 0.99);
+  assert.equal(m2.item, 'pesticide3');
+  assert.equal(s.produce.lavender || 0, 0);
+  assert.equal(s.produce.dragon_fruit || 0, 0);
+  assert.throws(() => G.craft(s, 'elixir', 3), /Epic or Legendary Premium/);
+});

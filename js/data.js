@@ -130,11 +130,15 @@ export const ITEMS = {
 };
 export const itemId = (kind, grade) => (grade === 1 ? kind : `${kind}${grade}`);
 
-// Potions Master recipes: pick one option, burn that produce, and roll a brewing outcome.
+// Potions Master recipes: pick one option, burn that produce, and roll a brewing outcome on
+// that option's odds. `rarity` may be a list (any of those rarities counts).
+// Premium produce brews better: no fizzles, and a Master brew is always Advanced.
+const premium = (rarity, count) => ({ tier: 'premium', rarity, count, odds: 'premium' });
+const master = { tier: 'premium', rarity: ['epic', 'legendary'], count: 1, odds: 'master' };
 export const RECIPES = {
-  elixir:     { name: 'Growth Elixir', xp: 75,   options: [{ tier: 'pico', rarity: 'legendary', count: 2 }, { tier: 'pico', rarity: 'epic', count: 8 }] },
-  pesticide:  { name: 'Pesticide',     xp: 250,  options: [{ tier: 'basic', rarity: 'legendary', count: 2 }, { tier: 'basic', rarity: 'epic', count: 4 }] },
-  fertilizer: { name: 'Fertilizer',    xp: 2000, options: [{ tier: 'pico', rarity: 'legendary', count: 2 }, { tier: 'pico', rarity: 'epic', count: 4 }] },
+  elixir:     { name: 'Growth Elixir', xp: 75,   options: [{ tier: 'pico', rarity: 'legendary', count: 2 }, { tier: 'pico', rarity: 'epic', count: 8 }, premium('common', 3), master] },
+  pesticide:  { name: 'Pesticide',     xp: 250,  options: [{ tier: 'basic', rarity: 'legendary', count: 2 }, { tier: 'basic', rarity: 'epic', count: 4 }, premium('uncommon', 2), master] },
+  fertilizer: { name: 'Fertilizer',    xp: 2000, options: [{ tier: 'pico', rarity: 'legendary', count: 2 }, { tier: 'pico', rarity: 'epic', count: 4 }, premium('rare', 2), master] },
 };
 // Grade 0 = the brew fizzles and the produce is lost.
 export const BREW_ODDS = [
@@ -143,4 +147,14 @@ export const BREW_ODDS = [
   { grade: 2, label: 'Standard', chance: 0.06 },
   { grade: 3, label: 'Advanced', chance: 0.015 },
 ];
+export const BREW_ODDS_BY = {
+  standard: { name: 'Brew', odds: BREW_ODDS },
+  premium: { name: 'Premium brew', odds: [
+    { grade: 0, label: 'Disaster', chance: 0 },
+    { grade: 1, label: 'Lesser', chance: 0.70 },
+    { grade: 2, label: 'Standard', chance: 0.22 },
+    { grade: 3, label: 'Advanced', chance: 0.08 },
+  ] },
+  master: { name: 'Master brew', odds: [{ grade: 3, label: 'Advanced', chance: 1 }] },
+};
 export const HOUR_MS = 3600 * 1000;

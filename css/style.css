@@ -780,3 +780,8 @@ b.down { color: #b8402e; }
 .wd-status.sent { background: var(--c-uncommon); }
 .wd-status.declined, .wd-status.cancelled { background: #e8dcc8; }
 a.tx-link { color: #3a4a9a; }
+
+.brew-tag { font-family: var(--font-pixel); font-size: 12px; padding: 1px 6px; border: 2px solid var(--outline); align-self: flex-start; }
+.brew-tag.premium { background: var(--c-rare); }
+.brew-tag.master { background: var(--c-legendary); }
+.recipe.premium, .recipe.master { border-top: 2px dashed #dcc69a; }
